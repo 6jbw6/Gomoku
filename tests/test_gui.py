@@ -87,10 +87,16 @@ class TestGomokuAppFlow:
         app.lobby_scene.profile = app.profile_mgr
         assert app.current_scene == "lobby"
 
-        # 启动人机推演对局
-        app.start_game(GameMode.CASUAL, "人机实战推演", is_ai=True)
+        # 启动天梯排位赛对局
+        app.start_game(
+            GameMode.RANKED,
+            "天梯排位赛",
+            opponent_name="棋客_云弈",
+            player_color=PieceColor.BLACK,
+        )
         assert app.current_scene == "game"
         assert app.game_scene is not None
+        assert app.game_scene.player_color == PieceColor.BLACK
 
         # 模拟黑棋在天元落子
         app.game_scene._execute_move(7, 7)
@@ -100,7 +106,39 @@ class TestGomokuAppFlow:
         app.game_scene._handle_resign()
         assert app.game_scene.settlement_dialog.is_visible is True
 
+        # 测试全屏切换方法
+        old_fullscreen = app.is_fullscreen
+        app.toggle_fullscreen()
+        assert app.is_fullscreen != old_fullscreen
+
         # 返回大厅
         app.back_to_lobby()
         assert app.current_scene == "lobby"
         assert app.game_scene is None
+
+
+class TestRoomNet:
+    """测试局域网/本地好友房间码创建与加入通信。"""
+
+    def test_room_host_and_client(self) -> None:
+        """测试服务端创建房间与客户端帧同步。"""
+        import time
+        from gomoku.gui.room_net import RoomClient, RoomHostServer
+
+        server = RoomHostServer(port=8099)
+        assert server.start() is True
+
+        client = RoomClient(port=8099)
+        assert client.connect() is True
+
+        received = []
+        client.on_message = lambda m: received.append(m)
+
+        client.send({"action": "create", "room_id": "TEST99", "username": "测试房主"})
+        time.sleep(0.1)
+
+        assert len(received) >= 1
+        assert received[0].get("event") == "created"
+
+        client.close()
+        server.stop()
