@@ -36,13 +36,6 @@
 
 body {
   background-color: var(--bg-main);
-  background-image: 
-    radial-gradient(ellipse at 50% 30%, rgba(22, 20, 18, 0.40) 0%, rgba(22, 20, 18, 0.65) 70%, rgba(22, 20, 18, 0.85) 100%),
-    url('/assets/theme_bg.jpg');
-  background-size: cover;
-  background-position: center top;
-  background-attachment: fixed;
-  background-repeat: no-repeat;
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   min-height: 100vh;
@@ -50,6 +43,26 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   user-select: none;
+  position: relative;
+}
+
+/* 沉浸式高亮主题背景层（明亮通透，东方雅韵） */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  background-image: 
+    radial-gradient(ellipse at 50% 30%, rgba(22, 20, 18, 0.08) 0%, rgba(22, 20, 18, 0.30) 70%, rgba(22, 20, 18, 0.55) 100%),
+    url('/assets/theme_bg.jpg');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  filter: brightness(1.25) contrast(1.05);
+  pointer-events: none;
 }
 
 /* 顶部通用导航栏 */
