@@ -31,6 +31,7 @@
 | [`v1.0.13`](#v1013---背景图层硬件加速滤镜增益与高透视觉升级) | 2026-09-15 | 视觉体验 | 独立背景层硬件加速、提升基准亮度与超轻量遮罩，全面明亮通透 | ✅ 已验证 |
 | [`v1.0.14`](#v1014---edge-与跨浏览器模态弹窗绝对居中兼容性修复) | 2026-09-15 | 缺陷修复 | 修复 Edge 浏览器弹窗偏左上角定位异常，全视口宽高与 margin: auto 强制双向居中 | ✅ 已验证 |
 | [`v1.1.0`](#v110---基于-pygame-框架重构为原生桌面端客户端) | 2026-09-15 | 架构重构 | 采用 Pygame-ce 框架将平台全面重构为原生桌面端客户端应用 | ✅ 已验证 |
+| [`v1.2.0`](#v120---删除-web-端全量代码与专注纯原生桌面端) | 2026-09-15 | 架构重构 | 彻底移除 Web 端代码与冗余依赖，全面专注纯原生桌面客户端 | ✅ 已验证 |
 
 ---
 
@@ -346,6 +347,33 @@
 
 ---
 
+### [v1.2.0] - 删除 Web 端全量代码与专注纯原生桌面端
+- **操作日期**：2026-09-15
+- **需求背景**：启动桌面端客户端，彻底删除 Web 端所有相关代码，使项目精简专注于高性能 Pygame 原生桌面客户端。
+- **具体操作**：
+  1. 静态资源解耦与迁移：
+     - 将文人茶室高清主题背景图 `theme_bg.jpg` 迁入桌面客户端专属资源目录 `gomoku/gui/assets/theme_bg.jpg`。
+     - 更新 `gomoku/gui/app.py` 中的背景图读取路径，完全摆脱对 Web 目录的相对引用。
+  2. 彻底清理 Web 端源码与数据文件：
+     - 删除 Web 表现层目录 `gomoku/web/`（包括 `index.html`、`style.css`、各类前端 JS 交互逻辑）。
+     - 删除 Web 传输层目录 `gomoku/api/`（包括 FastAPI 路由、依赖注入、WebSocket 帧处理器与 Pydantic 校验模型）。
+     - 删除服务端持久层目录 `gomoku/storage/`（SQLAlchemy 异步引擎、ORM 实体与仓储层）以及本地测试数据库 `gomoku.db`。
+     - 删除对局管理与联机匹配服务 `gomoku/services/room_service.py` 和 `gomoku/services/match_service.py`。
+     - 删除 FastAPI 应用入口 `gomoku/main.py` 及配置模块 `gomoku/config.py`。
+     - 删除针对 Web API 的测试文件 `tests/test_api.py`。
+  3. 服务层与启动入口精简：
+     - 创建 `gomoku/services/__init__.py`，干净导出 `RankService`、`RankState`、`RankSettlementResult`。
+     - 精简 `run.py`，移除 `--web` 参数分支，直接作为桌面客户端默认启动入口。
+     - 精简 `requirements.txt`，彻底移除所有 Web/ASGI 框架依赖，仅保留 `pygame-ce>=2.5.0` 与 `pytest>=8.0.0`。
+  4. 文档与全流程同步：
+     - 同步更新 [README.md](./README.md)，更新工程目录树与快速启动说明，清除 Web 相关说明。
+- **验证结果**：
+  - 执行 `flake8 gomoku tests desktop_app.py run.py --max-line-length=100`，**0 警告 0 报错**。
+  - 执行 `pytest tests -v`，16 项单元测试 **100% 全部通过**。
+  - 桌面客户端启动迅速，无任何外部 Web 依赖。
+
+---
+
 ## 🚀 持续操作标准作业程序 (SOP - main + dev 双分支模型)
 
 本项目全流程严格遵循下图所示的 **`main`（主干）与 `dev`（开发）双分支协同模型**：
@@ -387,6 +415,10 @@ gitGraph
     commit id: "dev-pygame-desktop"
     checkout main
     merge dev id: "merge-v1.1.0" tag: "v1.1.0"
+    checkout dev
+    commit id: "dev-cleanup-web"
+    checkout main
+    merge dev id: "merge-v1.2.0" tag: "v1.2.0"
 ```
 
 ### 双分支标准开发流转 5 步规程：

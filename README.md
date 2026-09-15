@@ -1,15 +1,15 @@
-# 五子棋天梯竞技平台 (Gomoku Arena)
+# 五子棋天梯竞技平台 (Gomoku Arena) 桌面端
 
-基于 Pygame-ce 原生游戏引擎构建的高性能、现代化五子棋桌面端竞技平台（兼容 Web 网页端）。支持经典天梯排位赛、单人休闲切磋、双人面对面同屏对弈与人机启发式推演。
+基于 Pygame-ce 原生游戏引擎构建的高性能、现代化五子棋桌面端竞技应用。支持经典天梯排位赛、单人休闲切磋、双人面对面同屏对弈与人机启发式推演。
 
 ---
 
 ## 核心特性与设计规范
 
-### 1. 四大核心对战模式
+### 1. 四大核心对弈模式
 
 - 天梯排位赛 (Ranked Competitive)：
-  - 采用天梯星级段位与勇者积分抵扣机制；
+  - 采用经典天梯星级段位与勇者积分抵扣机制；
   - 胜场晋级升星，战败扣星，支持青铜白银保星保护与连胜额外升星。
 - 单人休闲切磋 (Casual Match)：
   - 纯粹技艺推演交流，快速对局切磋，不计排位星数。
@@ -50,8 +50,8 @@
 
 系统全栈践行“东方金石雅韵与温润沉香木”视觉设计：
 
-- 沉浸式主题背景：沉香文人茶室对弈雅境 (`gomoku/web/assets/theme_bg.jpg`)，硬件加速独立层与高透滤镜增益；
-- 界面质感：核心卡片、导航栏与弹窗采用高质感毛玻璃半透层 (`COLOR_CARD_BG` / `backdrop-filter`)；
+- 沉浸式主题背景：沉香文人茶室对弈雅境 (`gomoku/gui/assets/theme_bg.jpg`)；
+- 界面质感：核心卡片、导航栏与弹窗采用高质感毛玻璃半透层 (`COLOR_CARD_BG`)；
 - 棋盘主体：沉香金木暖纹理 (`#DDB26F` / `COLOR_BOARD_BG`)；
 - 背景与卡片：玄武岩暖炭黑 (`COLOR_BG_DARK`) 与沉檀木深褐 (`COLOR_PANEL_BG`)；
 - 黑子（墨石）：墨玉黑曜石立体渐变与漫反射高光；
@@ -63,7 +63,9 @@
 
 ---
 
-### 4. 软件架构设计与 SOLID 原则落地
+### 4. 软件架构设计与工程目录
+
+全工程严格落实领域驱动设计与 SOLID 原则：
 
 ```text
 gomoku/
@@ -72,48 +74,38 @@ gomoku/
 │   ├── constants.py  # 规格常量与 (dx, dy) 连珠方向向量
 │   ├── enums.py      # 棋子颜色、游戏模式、对局状态、段位枚举
 │   └── rules.py      # IRuleEngine 接口, StandardRuleEngine (纯函数判定)
-├── gui/              # [桌面表现层] - 原生 Pygame 桌面图形客户端
-│   ├── app.py        # 桌面端总控类与 60 FPS 主循环
-│   ├── scenes.py     # 大厅场景与核心对弈场景
-│   ├── board_view.py # 15x15 棋盘渲染视口与坐标吸附
-│   ├── components.py # 国风金石按钮、卡片、进度条与居中弹窗
-│   ├── audio.py      # 声波物理合成与落子音效
-│   ├── ai.py         # 启发式多格局评估引擎
-│   ├── profile.py    # 本地棋手档案与段位换算持久化
-│   └── constants.py  # 东方金石配色体系与规格常量
 ├── services/         # [应用业务层] - 调度用例与算法 (OCP / LSP / ISP)
-│   ├── rank_service.py   # 天梯段位换算、升星、掉星与勇者积分算法
-│   ├── room_service.py   # 房间生命周期状态机与落子分发
-│   └── match_service.py  # 休闲与排位双池匹配调度器
-├── storage/          # [基础设施持久层] - 仓储接口 (DIP)
-│   ├── database.py       # SQLAlchemy 2.0 异步引擎与 aiosqlite
-│   ├── models.py         # UserModel 与 MatchRecordModel ORM 实体
-│   └── repositories.py   # IUserRepository 抽象接口与异步实现
-├── api/              # [传输接入层] - HTTP / WebSocket API
-│   ├── deps.py           # JWT 鉴权依赖注入与密码散列
-│   ├── schemas.py        # Pydantic 强类型请求/响应校验协议
-│   ├── routes_auth.py    # 游客快捷免密登录、正式用户注册登录
-│   ├── routes_rank.py    # 天梯榜单拉取、好友房间创建
-│   └── ws_handler.py     # WebSocket 实时双向帧长连接分发总线
-└── web/              # [网页表现层] - 现代轻量自适应 Web 客户端
-    ├── index.html        # 单页面主界面
-    ├── css/style.css     # 东方暖木金石精修配色与毛玻璃样式表
-    ├── assets/
-    │   └── theme_bg.jpg  # 沉香茶室山水雅境高清主题背景图
-    └── js/               # Web 端交互脚本库
+│   ├── __init__.py   # 业务服务包入口
+│   └── rank_service.py # 天梯段位换算、升星、掉星与勇者积分算法
+└── gui/              # [桌面表现层] - 原生 Pygame-ce 桌面图形客户端
+    ├── __init__.py   # 桌面 GUI 包入口
+    ├── app.py        # 桌面端总控类与 60 FPS 主事件循环
+    ├── scenes.py     # 大厅场景与核心对弈场景
+    ├── board_view.py # 15x15 棋盘渲染视口、光影渐变棋子与坐标吸附
+    ├── components.py # 国风金石按钮、沉香卡片、进度条与居中弹窗
+    ├── audio.py      # 纯数学声波物理拟真合成落子音效与按键音
+    ├── ai.py         # 启发式多格局评估引擎 (单机与人机切磋)
+    ├── profile.py    # 本地棋客档案持久化与天梯榜单管理
+    ├── constants.py  # 东方金石配色体系与视口规格常量
+    └── assets/       # 桌面端原生资源目录
+        └── theme_bg.jpg # 沉香茶室山水雅境高清主题背景图
 ```
+
+- S (单一职责原则)：`Board` 只管棋盘网格；`StandardRuleEngine` 只管胜负判定；`RankService` 只管排位计算；`BoardView` 只管像素映射与绘制。
+- O (开闭原则)：规则引擎抽象为 `IRuleEngine`，支持未来扩展国际连珠禁手规则。
+- L (里氏替换原则)：场景基类与接口多态规范，无缝切换场景流转。
+- I (接口隔离原则)：细粒度分离音效合成、档案存储与 AI 运算。
+- D (依赖倒置原则)：业务服务依赖抽象接口，不硬编码外部具体设施。
+- 全中文规范：项目全部源码、注释与文档字符串均采用中文。
 
 ---
 
 ## 技术选型
 
 - 原生桌面游戏引擎：`Pygame-ce >= 2.5.0`（SDL 2.32.10，硬件加速渲染）
-- 异步 Web 核心：`FastAPI >= 0.110.0`
-- ASGI 服务器：`Uvicorn >= 0.28.0`
-- 实时双向帧通信：`WebSockets >= 12.0`
-- ORM 与持久化：`SQLAlchemy 2.0 (Async)` + `aiosqlite`
-- 数据结构强校验：`Pydantic v2`
-- 安全与会话：`PyJWT` + `PassLib (Bcrypt)`
+- 音频合成引擎：基于 Python 标准库 `wave` + `struct` + `math` 算法物理合成
+- 核心测试套件：`pytest >= 8.0.0`
+- 代码质量检测：`flake8`（PEP 8 静态合规检测，单行 ≤ 100 字符）
 
 ---
 
@@ -124,10 +116,10 @@ gomoku/
 - 双分支协同模型 (`main` + `dev`)：
   - `main` 分支：生产稳定主干，仅用于接收经过充分测试的 `dev` 合并，所有版本 Tag 均打在 `main` 上。
   - `dev` 分支：日常开发分支，所有编码、Bug 修复、静态检查与单元测试均在 `dev` 分支上闭环完成。
-- 全流程操作履历：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理、天梯榜单过滤到分支流转规范的全部操作日志。
-- 语义化版本 Tag 体系：每一次功能发布或缺陷修复，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.1.0`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
+- 全流程操作履历：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理、天梯榜单过滤、桌面端改造至 Web 代码彻底清理的全部操作日志。
+- 语义化版本 Tag 体系：每一次功能发布或重大重构，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.2.0`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
 - 开发与运维 5 步标准作业规程 (SOP)：
-  1. 切至 `dev` 分支（`git checkout dev && git merge main`）进行编码与缺陷修复；
+  1. 切至 `dev` 分支（`git checkout dev && git merge main`）进行编码与开发；
   2. 执行 PEP 8 检测（`flake8 gomoku tests desktop_app.py run.py --max-line-length=100`）与全量测试（`pytest tests -v`）；
   3. 更新 [OPERATIONS.md](./OPERATIONS.md)（递增 Tag）与 [README.md](./README.md)；
   4. 提交并推送到 `dev` 分支（`git commit && git push origin dev`）；
@@ -146,14 +138,14 @@ pip install -r requirements.txt
 ### 2. 执行自动化测试与规范检测
 
 ```bash
-# 执行全部单元测试与集成测试（桌面客户端、核心规则、AI判定、段位系统、API测试）
+# 执行全部单元测试（桌面客户端组件、核心规则、AI判定、段位系统）
 python -m pytest tests -v
 
 # 执行 PEP 8 语法规范静态检测（零告警通过，单行长度 ≤ 100）
 flake8 gomoku tests desktop_app.py run.py --max-line-length=100
 ```
 
-### 3. 启动桌面端原生游戏（默认模式）
+### 3. 启动桌面端原生游戏
 
 ```bash
 python run.py
@@ -165,11 +157,3 @@ python run.py
 - **智能落子音效**：数学正弦波物理拟真合成落子“嗒”与按键清脆声，无外部音频资源依赖；
 - **纯正棋客榜**：大厅右侧常驻棋客天梯榜，实时展示段位、胜率与天梯星星；
 - **本地数据自闭环**：胜负自动结算并实时更新 `gomoku_profile.json`。
-
-### 4. （可选）启动 Web 端在线服务
-
-```bash
-python run.py --web
-```
-
-启动后在浏览器打开 `http://127.0.0.1:8088` 即可体验 Web 版双人在线对弈与房间匹配。
