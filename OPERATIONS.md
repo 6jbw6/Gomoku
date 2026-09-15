@@ -29,6 +29,7 @@
 | [`v1.0.11`](#v1011---东方金石雅韵沉浸式游戏背景与毛玻璃ui) | 2026-09-15 | 视觉体验 | 引入东方金石雅韵沉浸式游戏主题背景与毛玻璃质感UI | ✅ 已验证 |
 | [`v1.0.12`](#v1012---背景遮罩亮度调优与意境通透感增强) | 2026-09-15 | 视觉体验 | 调亮背景图径向遮罩，大幅增强文人雅室意境通透感 | ✅ 已验证 |
 | [`v1.0.13`](#v1013---背景图层硬件加速滤镜增益与高透视觉升级) | 2026-09-15 | 视觉体验 | 独立背景层硬件加速、提升基准亮度与超轻量遮罩，全面明亮通透 | ✅ 已验证 |
+| [`v1.0.14`](#v1014---edge-与跨浏览器模态弹窗绝对居中兼容性修复) | 2026-09-15 | 缺陷修复 | 修复 Edge 浏览器弹窗偏左上角定位异常，全视口宽高与 margin: auto 强制双向居中 | ✅ 已验证 |
 
 ---
 
@@ -290,6 +291,32 @@
 
 ---
 
+### [v1.0.14] - Edge 与跨浏览器模态弹窗绝对居中兼容性修复
+- **操作日期**：2026-09-15
+- **需求背景**：用户反馈在 Edge 浏览器中对局结算弹窗（结算卡片、好友开房等）偏左上角显示，而 Google Chrome 正常居中。
+- **原因剖析**：
+  - `body` 采用 `display: flex; flex-direction: column;` 弹性容器布局。
+  - 原 `.modal-overlay` 采用 `position: fixed; inset: 0;`。在 Edge 浏览器内核中，脱离文档流的 fixed 弹性子元素若未声明明确的视口宽高尺寸，`inset: 0` 会被计算为紧贴内容的尺寸（`fit-content`，即约 512px 宽），导致整个蒙层没有拉伸覆盖全屏，而直接静态定位在屏幕左上角。
+- **具体操作**：
+  1. 升级 `.modal-overlay` 弹窗蒙层样式：
+     - 将原本仅使用 `inset: 0` 增强补齐为 `top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; width: 100%; height: 100%; flex-shrink: 0; box-sizing: border-box;`。
+     - 确保在所有现代浏览器中蒙层均 100% 覆盖全屏，背景磨砂虚化完整铺满。
+     - 调整层级为 `z-index: 1000;`，并给 `.modal-overlay.show` 赋予 `display: flex !important;`。
+  2. 增强 `.modal-box` 绝对居中：
+     - 在 `.modal-box` 中加入 `margin: auto;`。在 CSS Flexbox 规范中，`margin: auto` 会自动吸收所有方向的剩余空间，实现 100% 可靠的水平垂直双向绝对居中，彻底消除浏览器内核渲染偏差。
+  3. 优化 `.settlement-card` 内边距：
+     - 调整结算卡片内边距为 `padding: 24px 20px;`，消除横向内容贴边，提升排版呼吸感。
+  4. 执行 `main + dev` 双分支标准工作流：
+     - 在 `dev` 分支完成修改与自动化测试回归。
+     - 同步更新 `OPERATIONS.md` 与 `README.md`。
+     - 合并入 `main` 主干并签署 `v1.0.14` Tag 推送至 GitHub。
+- **验证结果**：
+  - `flake8 gomoku tests --max-line-length=100` 0 告警通过。
+  - `pytest tests -v` 11 项用例全部通过。
+  - 在 Edge、Chrome 及多核浏览器下弹窗与全屏蒙层均严格水平垂直居中展示。
+
+---
+
 ## 🚀 持续操作标准作业程序 (SOP - main + dev 双分支模型)
 
 本项目全流程严格遵循下图所示的 **`main`（主干）与 `dev`（开发）双分支协同模型**：
@@ -323,6 +350,10 @@ gitGraph
     commit id: "dev-ultra-bright"
     checkout main
     merge dev id: "merge-v1.0.13" tag: "v1.0.13"
+    checkout dev
+    commit id: "dev-fix-edge-modal"
+    checkout main
+    merge dev id: "merge-v1.0.14" tag: "v1.0.14"
 ```
 
 ### 双分支标准开发流转 5 步规程：
