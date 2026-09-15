@@ -12,8 +12,8 @@
 
 :root {
   --bg-main: #161412;
-  --bg-card: #231F1C;
-  --bg-card-hover: #2E2824;
+  --bg-card: rgba(35, 31, 28, 0.88);
+  --bg-card-hover: rgba(46, 40, 36, 0.94);
   --border-gold: #8C6D37;
   --border-gold-glow: #D4AF37;
   --border-dim: #3D352E;
@@ -36,6 +36,13 @@
 
 body {
   background-color: var(--bg-main);
+  background-image: 
+    radial-gradient(ellipse at 50% 30%, rgba(22, 20, 18, 0.72) 0%, rgba(22, 20, 18, 0.90) 70%, #161412 100%),
+    url('/assets/theme_bg.jpg');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   min-height: 100vh;
@@ -47,13 +54,14 @@ body {
 
 /* 顶部通用导航栏 */
 .header-bar {
-  background: linear-gradient(180deg, #26211D 0%, #1A1715 100%);
+  background: linear-gradient(180deg, rgba(38, 33, 29, 0.94) 0%, rgba(26, 23, 21, 0.94) 100%);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-dim);
   padding: 12px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   z-index: 50;
 }
 
@@ -116,6 +124,16 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* 个人战绩与排位卡片 */
+.profile-card {
+  background: linear-gradient(145deg, rgba(42, 37, 33, 0.88), rgba(30, 26, 23, 0.92));
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-gold);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
 /* 大厅模式选择卡片 */
 .lobby-grid {
   display: grid;
@@ -125,7 +143,8 @@ body {
 }
 
 .mode-card {
-  background: linear-gradient(145deg, #24201D 0%, #1E1A17 100%);
+  background: linear-gradient(145deg, rgba(36, 32, 29, 0.88) 0%, rgba(30, 26, 23, 0.92) 100%);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--border-dim);
   border-radius: 12px;
   padding: 24px;
@@ -137,6 +156,7 @@ body {
   transition: all 0.25s ease;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .mode-card::before {
@@ -286,6 +306,7 @@ body {
 
 .player-card {
   background-color: var(--bg-card);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--border-dim);
   border-radius: 10px;
   padding: 16px;
@@ -294,6 +315,7 @@ body {
   justify-content: space-between;
   position: relative;
   transition: border-color 0.25s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
 .player-card.active-turn {
@@ -358,7 +380,8 @@ body {
 }
 
 .modal-box {
-  background: linear-gradient(160deg, #2A2420 0%, #1E1A17 100%);
+  background: linear-gradient(160deg, rgba(42, 36, 32, 0.95) 0%, rgba(30, 26, 23, 0.97) 100%);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--border-gold);
   border-radius: 16px;
   padding: 28px;
