@@ -13,6 +13,7 @@ htmlcov/
 *.db
 *.sqlite3
 gomoku.db
+gomoku_profile.json
 
 # 虚拟环境与包管理
 venv/
