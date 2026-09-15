@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>五子棋天梯竞技平台</title>
+  <!-- 引入东方暖木金石雅韵核心样式表（严格禁止出现任何蓝紫色系） -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- 顶部主导航栏 -->
+  <header class="header-bar">
+    <div class="brand-title">
+      <span>♟️</span>
+      <span>五子棋天梯竞技</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <!-- 玩家段位与资料药丸组件 -->
+      <div class="user-badge" id="header-user-badge">
+        <span id="user-nickname" style="font-weight: bold;">加载中...</span>
+        <span class="rank-pill" id="user-rank-badge">倔强青铜 III</span>
+      </div>
+      <!-- 榜单与音效开关 -->
+      <button class="btn-secondary" id="btn-leaderboard" style="padding: 6px 14px; font-size: 0.85rem;">🏆 天梯榜</button>
+      <button class="btn-secondary" id="btn-sound-toggle" style="padding: 6px 14px; font-size: 0.85rem;">🔊 音效: 开</button>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="main-container">
+
+    <!-- 1. 游戏大厅视口 (Lobby View) -->
+    <section id="lobby-view" class="view-panel active">
+      <!-- 个人排位卡片大展示 -->
+      <div style="background: linear-gradient(145deg, #2A2521, #1E1A17); border: 1px solid var(--border-gold); border-radius: 14px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">当前排位阶层</div>
+            <div id="user-stars-row" style="margin-top: 6px;"></div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+              勇者积分: <span id="user-brave-text" style="color: var(--gold-primary); font-weight: bold;">0 / 150</span>
+            </div>
+            <div class="brave-bar-container" style="width: 160px; margin-top: 6px;">
+              <div class="brave-bar-fill" id="user-brave-bar" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+        <div id="user-win-rate" style="margin-top: 14px; font-size: 0.85rem; color: var(--text-muted); border-top: 1px solid var(--border-dim); padding-top: 10px;">
+          胜率: 0.0% (0/0场) | 连胜: 0
+        </div>
+      </div>
+
+      <!-- 模式选择矩阵 -->
+      <div class="lobby-grid">
+        <!-- 模式一：天梯排位赛 -->
+        <div class="mode-card" id="card-ranked" style="border-color: var(--border-gold);">
+          <div class="mode-icon">⚔️</div>
+          <div class="mode-title">天梯排位赛</div>
+          <div class="mode-desc">基于实力匹配旗鼓相当的对手，胜场晋星、累积勇者积分、冲击至尊王者之巅。</div>
+          <button class="btn-gold" style="width: 100%;">开始排位匹配</button>
+        </div>
+
+        <!-- 模式二：单人休闲对战 -->
+        <div class="mode-card" id="card-casual">
+          <div class="mode-icon">🎯</div>
+          <div class="mode-title">单人休闲匹配</div>
+          <div class="mode-desc">无天梯胜负包袱，快速寻找在线棋友切磋对弈。</div>
+          <button class="btn-secondary" style="width: 100%;">休闲极速开局</button>
+        </div>
+
+        <!-- 模式三：好友对战 -->
+        <div class="mode-card" id="card-friend">
+          <div class="mode-icon">🤝</div>
+          <div class="mode-title">好友开房对战</div>
+          <div class="mode-desc">自建专属棋室，自定义步时限速，支持 6 位房间码精准邀请与亲友对弈。</div>
+          <button class="btn-secondary" style="width: 100%;">自建或加入房间</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 棋局对战视口 (Game View) -->
+    <section id="game-view" class="view-panel">
+      <!-- 局内顶部栏 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; width: 100%; max-width: 900px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="rank-pill" id="game-room-tag">房间: --</span>
+        </div>
+        <button class="btn-secondary" id="btn-leave-room" style="padding: 6px 16px;">返回大厅</button>
+      </div>
+
+      <!-- 对战核心布局 -->
+      <div class="game-layout">
+        <!-- 左侧/居中：15x15 Canvas 棋盘 -->
+        <div class="board-wrapper">
+          <canvas id="gomoku-canvas"></canvas>
+        </div>
+
+        <!-- 右侧：选手信息卡与对局操作盘 -->
+        <div class="sidebar-panel">
+          <!-- 对手卡片 -->
+          <div class="player-card" id="card-white">
+            <div class="player-info-left">
+              <div class="piece-badge piece-white"></div>
+              <div>
+                <div style="font-weight: bold;" id="white-player-name">等待对手...</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="white-player-rank">--</div>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 0.8rem; color: var(--text-muted);">执白后手</span>
+            </div>
+          </div>
+
+          <!-- 回合与倒计时中央提示 -->
+          <div style="background-color: var(--bg-card); border: 1px solid var(--border-gold); border-radius: 10px; padding: 14px; text-align: center;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">本回合剩余思考时间</div>
+            <div class="timer-tag" id="turn-timer-text" style="margin-top: 4px;">--</div>
+          </div>
+
+          <!-- 我方卡片 -->
+          <div class="player-card" id="card-black">
+            <div class="player-info-left">
+              <div class="piece-badge piece-black"></div>
+              <div>
+                <div style="font-weight: bold;" id="black-player-name">我</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="black-player-rank">--</div>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 0.8rem; color: var(--text-muted);">执黑先手</span>
+            </div>
+          </div>
+
+          <!-- 交互操作按钮群 -->
+          <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <button class="btn-ready" id="btn-ready" style="flex: 1;">准备就绪</button>
+            <button class="btn-danger" id="btn-resign" style="flex: 1;">主动认输</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================== 模态弹窗总成 ======================== -->
+
+  <!-- 1. 在线匹配中弹窗 -->
+  <div class="modal-overlay" id="match-modal">
+    <div class="modal-box" style="text-align: center;">
+      <div class="modal-header" id="match-mode-title">寻找势均力敌的对手...</div>
+      <div class="radar-spinner"></div>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin: 16px 0;">系统正在天梯池中根据段位分值进行权衡寻觅</p>
+      <button class="btn-danger" id="btn-cancel-match">取消匹配</button>
+    </div>
+  </div>
+
+  <!-- 2. 好友对局设置弹窗 -->
+  <div class="modal-overlay" id="friend-modal">
+    <div class="modal-box">
+      <div class="modal-header">好友开房对战</div>
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">选择每步思考限时：</label>
+        <select id="select-timeout" style="width: 100%; background: #161412; color: #FAF7EE; border: 1px solid var(--border-gold); padding: 8px 12px; border-radius: 6px;">
+          <option value="30">30 秒 (快棋对决)</option>
+          <option value="60">60 秒 (沉稳推演)</option>
+          <option value="0">不限时 (自由切磋)</option>
+        </select>
+        <button class="btn-gold" id="btn-create-friend-room" style="width: 100%; margin-top: 14px;">一键创建新房间</button>
+      </div>
+
+      <div style="border-top: 1px solid var(--border-dim); padding-top: 18px;">
+        <label style="display: block; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">加入已有房间：</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="input-room-code" placeholder="输入 6 位房间邀请码" maxlength="6" autocomplete="off" style="flex: 1; background: #161412; color: #FAF7EE; border: 1px solid var(--border-dim); padding: 8px 12px; border-radius: 6px; text-transform: uppercase;">
+          <button class="btn-secondary" id="btn-join-friend-room">加入</button>
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 20px;">
+        <button class="btn-secondary btn-close-modal" style="width: 100%;">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 天梯排行榜弹窗 -->
+  <div class="modal-overlay" id="leaderboard-modal">
+    <div class="modal-box" style="max-width: 620px;">
+      <div class="modal-header">🏆 全服天梯大师榜</div>
+      <div style="max-height: 380px; overflow-y: auto; margin: 16px 0;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border-gold); color: var(--text-muted);">
+              <th style="padding: 8px;">排名</th>
+              <th style="padding: 8px;">棋手</th>
+              <th style="padding: 8px;">当前段位</th>
+              <th style="padding: 8px;">胜率 (战绩)</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-tbody"></tbody>
+        </table>
+      </div>
+      <button class="btn-secondary btn-close-modal" style="width: 100%;">返回</button>
+    </div>
+  </div>
+
+  <!-- 4. 天梯与对局结算弹窗 -->
+  <div class="modal-overlay" id="settlement-modal">
+    <div class="modal-box settlement-card">
+      <div class="settlement-title settlement-win" id="settlement-title">胜利</div>
+      <div class="settlement-rank-name" id="settlement-rank-text">荣耀黄金 I ➔ 尊贵铂金 IV</div>
+      <div style="font-size: 1.4rem; font-weight: bold; color: var(--gold-primary); margin: 8px 0;" id="settlement-stars-delta">星数 +1</div>
+      <div style="font-size: 0.9rem; color: var(--text-muted); margin: 10px 0;" id="settlement-brave-text">获得勇者积分 +25</div>
+      <div id="settlement-badge-tip" style="margin: 12px 0;"></div>
+      <button class="btn-gold" id="btn-settlement-confirm" style="width: 80%; margin-top: 16px;">确认并返回</button>
+    </div>
+  </div>
+
+  <!-- 脚本驱动链 -->
+  <script src="js/audio_synth.js"></script>
+  <script src="js/rank_ui.js"></script>
+  <script src="js/canvas_board.js"></script>
+  <script src="js/ws_client.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

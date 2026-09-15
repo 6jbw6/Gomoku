@@ -1,0 +1,32 @@
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 测试与代码覆盖率缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地数据存储与数据库
+*.db
+*.sqlite3
+gomoku.db
+
+# 虚拟环境与包管理
+venv/
+.venv/
+env/
+ENV/
+
+# 编辑器与操作系统特定文件
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
