@@ -129,19 +129,20 @@ class LobbyScene:
         self.room_dialog = ModalDialog(width=520, height=360)
         self.room_sub_mode: str = "create"
         self.current_room_code: str = ""
+        self.room_error_tip: str = ""
+        self.room_client: Optional[RoomClient] = None
+        self.match_client: Optional[RoomClient] = None
         self.room_input = TextInput((0, 0, 260, 46), placeholder="请输入6位房间码")
 
         self.btn_tab_create = Button((0, 0, 130, 38), "创建房间", on_click=self._tab_to_create)
         self.btn_tab_join = Button((0, 0, 130, 38), "加入房间", on_click=self._tab_to_join)
-        self.btn_start_room = Button((0, 0, 140, 42), "开始对弈", on_click=self._confirm_room_start)
         self.btn_join_room = Button((0, 0, 140, 42), "立即加入", on_click=self._confirm_room_join)
         self.btn_close_room = Button(
-            (0, 0, 110, 42), "关闭", style="secondary", on_click=self._close_room_dialog
+            (0, 0, 140, 42), "关闭返回", style="secondary", on_click=self._close_room_dialog
         )
         self.room_dialog.buttons.extend([
             self.btn_tab_create,
             self.btn_tab_join,
-            self.btn_start_room,
             self.btn_join_room,
             self.btn_close_room,
         ])
@@ -174,92 +175,102 @@ class LobbyScene:
         self.match_mode = mode
         self.match_title = title
         self.match_start_time = time.time()
+
+        get_or_start_room_server()
+        if self.match_client:
+            self.match_client.close()
+        self.match_client = RoomClient()
+        if self.match_client.connect():
+            self.match_client.send({
+                "action": "match",
+                "mode": mode.value,
+                "username": self.profile.username,
+                "rank": self.profile.display_rank,
+            })
         self.matching_dialog.show()
 
     def _cancel_matchmaking(self) -> None:
         """取消匹配状态。"""
         self.sound.play_click()
+        if self.match_client:
+            self.match_client.send({"action": "cancel_match"})
+            self.match_client.close()
+            self.match_client = None
         self.is_matching = False
         self.matching_dialog.hide()
 
     def _open_room_dialog(self) -> None:
         """打开好友房间码弹窗。"""
         self.sound.play_click()
-        self._generate_new_room_code()
         self.room_sub_mode = "create"
+        self.room_error_tip = ""
+        self._start_hosting_room()
         self.room_dialog.show()
 
     def _close_room_dialog(self) -> None:
-        """关闭房间弹窗。"""
+        """关闭房间弹窗并清理套接字连接。"""
         self.sound.play_click()
+        if self.room_client:
+            self.room_client.close()
+            self.room_client = None
         self.room_dialog.hide()
+        self.room_error_tip = ""
 
     def _tab_to_create(self) -> None:
         """切换至创建房间选项卡。"""
         self.sound.play_click()
         self.room_sub_mode = "create"
-        if not self.current_room_code:
-            self._generate_new_room_code()
+        self.room_error_tip = ""
+        self._start_hosting_room()
 
     def _tab_to_join(self) -> None:
         """切换至加入房间选项卡。"""
         self.sound.play_click()
         self.room_sub_mode = "join"
+        self.room_error_tip = ""
+        if self.room_client:
+            self.room_client.close()
+            self.room_client = None
         self.room_input.text = ""
 
-    def _generate_new_room_code(self) -> None:
-        """随机生成 6 位字母数字房间码并尝试启动本地监听。"""
+    def _start_hosting_room(self) -> None:
+        """随机生成 6 位字母数字房间码并启动本地监听建立连接。"""
         chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         self.current_room_code = "".join(random.choices(chars, k=6))
         get_or_start_room_server()
-
-    def _confirm_room_start(self) -> None:
-        """房主启动房间对战并建立套接字会话。"""
-        self.sound.play_click()
-        self.room_dialog.hide()
-        client = RoomClient()
-        if client.connect():
-            client.send({
+        if self.room_client:
+            self.room_client.close()
+        self.room_client = RoomClient()
+        if self.room_client.connect():
+            self.room_client.send({
                 "action": "create",
                 "room_id": self.current_room_code,
                 "username": self.profile.username,
+                "rank": self.profile.display_rank,
             })
-        else:
-            client = None
-        opp_name = random.choice(OPPONENT_NAMES)
-        self.on_start_game(
-            mode=GameMode.FRIEND,
-            title=f"好友房间 ({self.current_room_code})",
-            opponent_name=f"{opp_name} (房间客方)",
-            opponent_rank="棋道高手",
-            player_color=PieceColor.BLACK,
-            room_client=client,
-        )
 
     def _confirm_room_join(self) -> None:
         """客方输入房间码加入对战。"""
         code = self.room_input.text.strip().upper()
         if len(code) != 6:
+            self.room_error_tip = "房间码须为 6 位字母或数字"
             return
         self.sound.play_click()
-        self.room_dialog.hide()
-        client = RoomClient()
-        if client.connect():
-            client.send({
-                "action": "join",
-                "room_id": code,
-                "username": self.profile.username,
-            })
-        else:
-            client = None
-        self.on_start_game(
-            mode=GameMode.FRIEND,
-            title=f"好友对战 ({code})",
-            opponent_name="房主棋友",
-            opponent_rank="棋道高手",
-            player_color=PieceColor.WHITE,
-            room_client=client,
-        )
+        get_or_start_room_server()
+        if self.room_client:
+            self.room_client.close()
+        self.room_client = RoomClient()
+        if not self.room_client.connect():
+            self.room_error_tip = "连接本地对战服务失败，请重试"
+            return
+        self.current_room_code = code
+        self.room_error_tip = "正在加入房间..."
+        self.room_client.send({
+            "action": "join",
+            "room_id": code,
+            "username": self.profile.username,
+            "rank": self.profile.display_rank,
+        })
 
     def handle_event(self, event: pygame.event.Event) -> None:
         """分发大厅事件。"""
@@ -283,10 +294,41 @@ class LobbyScene:
             card.handle_event(event)
 
     def update(self) -> None:
-        """驱动匹配逻辑倒计时。"""
+        """驱动匹配逻辑与房间入座事件。"""
+        # 1. 匹配流程驱动
         if self.is_matching:
+            if self.match_client:
+                for msg in self.match_client.poll_messages():
+                    if msg.get("event") == "start":
+                        self.is_matching = False
+                        self.matching_dialog.hide()
+                        opp_name = msg.get("opponent_name", "在线棋友")
+                        opp_rank = msg.get("opponent_rank", "棋道高手")
+                        p_color = (
+                            PieceColor.BLACK
+                            if msg.get("my_color") == "black"
+                            else PieceColor.WHITE
+                        )
+                        client = self.match_client
+                        self.match_client = None
+                        self.on_start_game(
+                            mode=self.match_mode,
+                            title=self.match_title,
+                            opponent_name=opp_name,
+                            opponent_rank=opp_rank,
+                            player_color=p_color,
+                            room_client=client,
+                        )
+                        return
+
+            # 若 5 秒内未匹配到其他真实客户端，平滑回退至单机启发式拟真对弈
             elapsed = time.time() - self.match_start_time
-            if elapsed >= 1.8:
+            if elapsed >= 5.0:
+                if self.match_client:
+                    self.match_client.send({"action": "cancel_match"})
+                    self.match_client.close()
+                    self.match_client = None
+
                 self.is_matching = False
                 self.matching_dialog.hide()
                 opp_name = random.choice(OPPONENT_NAMES)
@@ -299,7 +341,35 @@ class LobbyScene:
                     opponent_name=opp_name,
                     opponent_rank=opp_tier,
                     player_color=player_color,
+                    room_client=None,
                 )
+                return
+
+        # 2. 好友房间流程驱动
+        if self.room_dialog.is_visible and self.room_client:
+            for msg in self.room_client.poll_messages():
+                if msg.get("event") == "start":
+                    self.room_dialog.hide()
+                    opp_name = msg.get("opponent_name", "好友棋友")
+                    opp_rank = msg.get("opponent_rank", "棋道高手")
+                    p_color = (
+                        PieceColor.BLACK
+                        if msg.get("my_color") == "black"
+                        else PieceColor.WHITE
+                    )
+                    client = self.room_client
+                    self.room_client = None
+                    self.on_start_game(
+                        mode=GameMode.FRIEND,
+                        title=f"好友房间 ({self.current_room_code})",
+                        opponent_name=opp_name,
+                        opponent_rank=opp_rank,
+                        player_color=p_color,
+                        room_client=client,
+                    )
+                    return
+                elif msg.get("event") == "error":
+                    self.room_error_tip = msg.get("msg", "加入房间失败")
 
     def draw(self, surface: pygame.Surface) -> None:
         """绘制游戏大厅全景（删除英文后缀）。"""
@@ -428,12 +498,15 @@ class LobbyScene:
             code_surf = font_code.render(spaced_code, True, COLOR_GOLD_PRIMARY)
             surface.blit(code_surf, code_surf.get_rect(center=(box.centerx, box.y + 165)))
 
-            tip2 = font_tip.render("请将房间码告知好友，好友输入即可同房切磋", True, COLOR_TEXT_MUTED)
-            surface.blit(tip2, tip2.get_rect(center=(box.centerx, box.y + 215)))
+            dots = "." * ((int(time.time() * 2) % 4) + 1)
+            wait_surf = font_tip.render(f"等待好友输入房间码加入中{dots}", True, COLOR_GOLD_PRIMARY)
+            surface.blit(wait_surf, wait_surf.get_rect(center=(box.centerx, box.y + 215)))
 
-            self.btn_start_room.rect.center = (box.centerx - 85, box.y + 295)
-            self.btn_close_room.rect.center = (box.centerx + 85, box.y + 295)
-            self.btn_start_room.draw(surface)
+            tip2 = font_tip.render("好友输入后将自动同步进入对局，无需多余操作", True, COLOR_TEXT_MUTED)
+            surface.blit(tip2, tip2.get_rect(center=(box.centerx, box.y + 245)))
+
+            self.btn_close_room.text = "取消等待并返回"
+            self.btn_close_room.rect = pygame.Rect(box.centerx - 75, box.y + 295, 150, 42)
             self.btn_close_room.draw(surface)
         else:
             font_tip = get_font(15)
@@ -443,8 +516,16 @@ class LobbyScene:
             self.room_input.rect.center = (box.centerx, box.y + 175)
             self.room_input.draw(surface)
 
+            if self.room_error_tip:
+                font_err = get_font(13)
+                is_err = "失败" in self.room_error_tip or "不存在" in self.room_error_tip
+                err_col = (220, 38, 38) if is_err else COLOR_GOLD_PRIMARY
+                err_surf = font_err.render(self.room_error_tip, True, err_col)
+                surface.blit(err_surf, err_surf.get_rect(center=(box.centerx, box.y + 225)))
+
             self.btn_join_room.rect.center = (box.centerx - 85, box.y + 295)
             self.btn_close_room.rect.center = (box.centerx + 85, box.y + 295)
+            self.btn_close_room.text = "关闭返回"
             self.btn_join_room.draw(surface)
             self.btn_close_room.draw(surface)
 
@@ -515,7 +596,11 @@ class GameScene:
         # 核心规则引擎与棋盘数据
         self.board = Board()
         self.rules = StandardRuleEngine()
-        self.ai = GomokuAI(ai_color=self.opponent_color)
+        self.ai = (
+            GomokuAI(ai_color=self.opponent_color)
+            if self.room_client is None
+            else None
+        )
 
         # 棋盘视口
         self.board_view = BoardView((60, 60, 680, 680))
@@ -532,11 +617,6 @@ class GameScene:
         self.is_opponent_thinking: bool = (self.current_turn == self.opponent_color)
         self.opponent_think_start: float = time.time()
         self.opponent_think_duration: float = random.uniform(0.8, 1.5)
-
-        # 网络对战收包队列
-        self.pending_remote_moves: List[Tuple[int, int]] = []
-        if self.room_client:
-            self.room_client.on_message = self._on_remote_message
 
         # 结算模态弹窗
         self.settlement_dialog = ModalDialog(width=480, height=360)
@@ -571,17 +651,6 @@ class GameScene:
             on_click=self._handle_resign,
             font_size=15,
         )
-
-    def _on_remote_message(self, msg: dict) -> None:
-        """接收房间网络对战消息推送。"""
-        action = msg.get("action") or msg.get("event")
-        if action == "move":
-            x, y = msg.get("x", -1), msg.get("y", -1)
-            if 0 <= x < 15 and 0 <= y < 15:
-                self.pending_remote_moves.append((x, y))
-        elif action in ("surrender", "opponent_quit"):
-            if not self.is_game_over:
-                self._end_game(winner=self.player_color)
 
     def _handle_resign(self) -> None:
         """玩家主动认输或中途退场处理。"""
@@ -625,19 +694,26 @@ class GameScene:
         self.settlement_dialog.show()
 
     def update(self) -> None:
-        """每帧更新逻辑，驱动对手思考、网络帧与落子执行。"""
+        """每帧更新逻辑，驱动网络帧同步与本地单机思考。"""
         if self.is_game_over:
             return
 
-        # 1. 优先处理网络房间对方传来的落子
-        if self.pending_remote_moves:
-            rx, ry = self.pending_remote_moves.pop(0)
-            if self.current_turn == self.opponent_color:
-                self._execute_move(rx, ry)
+        # 1. 优先处理网络房间对方传来的落子与退出事件
+        if self.room_client is not None:
+            for msg in self.room_client.poll_messages():
+                action = msg.get("action") or msg.get("event")
+                if action == "move":
+                    rx, ry = msg.get("x", -1), msg.get("y", -1)
+                    if 0 <= rx < 15 and 0 <= ry < 15:
+                        if self.current_turn == self.opponent_color:
+                            self._execute_move(rx, ry)
+                elif action in ("surrender", "opponent_quit"):
+                    if not self.is_game_over:
+                        self._end_game(winner=self.player_color)
             return
 
-        # 2. 对手回合（非同屏！仅当轮到对手执子时驱动）
-        if self.current_turn == self.opponent_color:
+        # 2. 本地单机模拟对手回合（仅在 room_client 为 None 时由本地 AI 驱动）
+        if self.ai is not None and self.current_turn == self.opponent_color:
             if not self.is_opponent_thinking:
                 self.is_opponent_thinking = True
                 self.opponent_think_start = time.time()
@@ -646,7 +722,6 @@ class GameScene:
             elapsed = time.time() - self.opponent_think_start
             if elapsed >= self.opponent_think_duration:
                 self.is_opponent_thinking = False
-                # 若无真实网络客方落子，由 GomokuAI 智能推演
                 best_x, best_y = self.ai.select_best_move(self.board)
                 self._execute_move(best_x, best_y)
 

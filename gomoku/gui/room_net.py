@@ -1,13 +1,15 @@
-"""五子棋桌面端局域网与本地好友房间码通信服务模块。
+"""五子棋桌面端局域网与本地房间码及联机匹配通信服务模块。
 
-基于 Python 原生 socket 与多线程架构，实现 6 位房间码创建、加入、落子帧同步及断线清理。
+基于 Python 原生 socket 与多线程架构，实现房间码对战、双端联机匹配与落子帧同步。
 严格遵循 PEP 8 规范，所有注释采用中文。
 """
 
 import json
+import queue
 import socket
 import threading
-from typing import Callable, Dict, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Tuple
 
 DEFAULT_ROOM_PORT = 8088
 
@@ -15,18 +17,26 @@ DEFAULT_ROOM_PORT = 8088
 class RoomSession:
     """房间连接会话实体。"""
 
-    def __init__(self, room_id: str, host_conn: socket.socket, host_name: str) -> None:
+    def __init__(
+        self,
+        room_id: str,
+        host_conn: socket.socket,
+        host_name: str,
+        host_rank: str = "初入棋道",
+    ) -> None:
         """初始化房间会话。"""
         self.room_id = room_id
         self.host_conn = host_conn
         self.host_name = host_name
+        self.host_rank = host_rank
         self.guest_conn: Optional[socket.socket] = None
         self.guest_name: str = ""
+        self.guest_rank: str = "初入棋道"
         self.is_started: bool = False
 
 
 class RoomHostServer:
-    """轻量级房间监听调度服务端。"""
+    """轻量级房间监听与联机撮合服务端。"""
 
     def __init__(self, host: str = "0.0.0.0", port: int = DEFAULT_ROOM_PORT) -> None:
         """初始化房间服务器。"""
@@ -35,6 +45,7 @@ class RoomHostServer:
         self.server_sock: Optional[socket.socket] = None
         self.is_running: bool = False
         self.rooms: Dict[str, RoomSession] = {}
+        self.match_queues: Dict[str, List[dict]] = {"ranked": [], "casual": []}
         self.lock = threading.Lock()
 
     def start(self) -> bool:
@@ -45,7 +56,7 @@ class RoomHostServer:
             self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_sock.bind((self.host, self.port))
-            self.server_sock.listen(5)
+            self.server_sock.listen(10)
             self.is_running = True
 
             t = threading.Thread(target=self._listen_loop, daemon=True)
@@ -94,46 +105,123 @@ class RoomHostServer:
                     action = msg.get("action")
 
                     if action == "create":
-                        room_id = msg.get("room_id", "")
+                        room_id = msg.get("room_id", "").strip().upper()
                         username = msg.get("username", "房主")
+                        rank = msg.get("rank", "初入棋道")
                         with self.lock:
-                            self.rooms[room_id] = RoomSession(room_id, conn, username)
+                            self.rooms[room_id] = RoomSession(room_id, conn, username, rank)
                         current_room_id = room_id
                         is_host = True
                         self._send(conn, {"event": "created", "room_id": room_id})
 
                     elif action == "join":
-                        room_id = msg.get("room_id", "")
+                        room_id = msg.get("room_id", "").strip().upper()
                         username = msg.get("username", "客方")
+                        rank = msg.get("rank", "初入棋道")
                         with self.lock:
                             session = self.rooms.get(room_id)
                             if not session:
-                                self._send(conn, {"event": "error", "msg": "房间码不存在"})
+                                self._send(conn, {"event": "error", "msg": "房间码不存在或已解散"})
                                 continue
-                            if session.guest_conn:
+                            if session.guest_conn is not None:
                                 self._send(conn, {"event": "error", "msg": "房间已满员"})
                                 continue
                             session.guest_conn = conn
                             session.guest_name = username
+                            session.guest_rank = rank
                             session.is_started = True
 
-                        current_room_id = room_id
-                        is_host = False
+                            current_room_id = room_id
+                            is_host = False
 
-                        # 双方通知开局：房主执黑先手，客方执白后手
-                        self._send(session.host_conn, {
-                            "event": "start",
-                            "my_color": "black",
-                            "opponent_name": username,
-                        })
-                        self._send(conn, {
-                            "event": "start",
-                            "my_color": "white",
-                            "opponent_name": session.host_name,
-                        })
+                            h_name = session.host_name
+                            g_name = username
+                            if h_name == g_name:
+                                h_name = f"{h_name} (房主)"
+                                g_name = f"{g_name} (客方)"
+
+                            # 双方通知开局：房主执黑先手，客方执白后手
+                            self._send(session.host_conn, {
+                                "event": "start",
+                                "mode": "friend",
+                                "room_id": room_id,
+                                "my_color": "black",
+                                "opponent_name": g_name,
+                                "opponent_rank": session.guest_rank,
+                            })
+                            self._send(conn, {
+                                "event": "start",
+                                "mode": "friend",
+                                "room_id": room_id,
+                                "my_color": "white",
+                                "opponent_name": h_name,
+                                "opponent_rank": session.host_rank,
+                            })
+
+                    elif action == "match":
+                        mode_key = msg.get("mode", "ranked")
+                        username = msg.get("username", "棋客")
+                        rank = msg.get("rank", "初入棋道")
+                        with self.lock:
+                            queue = self.match_queues.setdefault(mode_key, [])
+                            queue = [q for q in queue if q["conn"] != conn]
+                            self.match_queues[mode_key] = queue
+
+                            if queue:
+                                # 撮合匹配成功！
+                                peer_item = queue.pop(0)
+                                peer_conn = peer_item["conn"]
+                                peer_name = peer_item["username"]
+                                peer_rank = peer_item["rank"]
+
+                                m_id = f"M{int(time.time() * 1000) % 1000000}"
+                                ms = RoomSession(m_id, peer_conn, peer_name, peer_rank)
+                                ms.guest_conn = conn
+                                ms.guest_name = username
+                                ms.guest_rank = rank
+                                ms.is_started = True
+                                self.rooms[m_id] = ms
+
+                                current_room_id = m_id
+                                is_host = False
+
+                                p_name = peer_name
+                                u_name = username
+                                if p_name == u_name:
+                                    p_name = f"{p_name}_先手"
+                                    u_name = f"{u_name}_后手"
+
+                                self._send(peer_conn, {
+                                    "event": "start",
+                                    "mode": mode_key,
+                                    "room_id": m_id,
+                                    "my_color": "black",
+                                    "opponent_name": u_name,
+                                    "opponent_rank": rank,
+                                })
+                                self._send(conn, {
+                                    "event": "start",
+                                    "mode": mode_key,
+                                    "room_id": m_id,
+                                    "my_color": "white",
+                                    "opponent_name": p_name,
+                                    "opponent_rank": peer_rank,
+                                })
+                            else:
+                                queue.append({
+                                    "conn": conn,
+                                    "username": username,
+                                    "rank": rank,
+                                    "mode": mode_key,
+                                    "time": time.time(),
+                                })
+
+                    elif action == "cancel_match":
+                        with self.lock:
+                            for q in self.match_queues.values():
+                                q[:] = [item for item in q if item["conn"] != conn]
 
                     elif action in ("move", "surrender"):
-                        # 转发对局消息至对方
                         with self.lock:
                             session = self.rooms.get(current_room_id)
                             if session:
@@ -172,10 +260,12 @@ class RoomClient:
         self.port = port
         self.sock: Optional[socket.socket] = None
         self.is_connected: bool = False
-        self.on_message: Optional[Callable[[dict], None]] = None
+        self.msg_queue: queue.Queue = queue.Queue()
 
     def connect(self) -> bool:
         """连接服务端。"""
+        if self.is_connected and self.sock:
+            return True
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.host, self.port))
@@ -199,6 +289,16 @@ class RoomClient:
             self.is_connected = False
             return False
 
+    def poll_messages(self) -> List[dict]:
+        """主线程轮询获取已到达的网络帧。"""
+        messages = []
+        while not self.msg_queue.empty():
+            try:
+                messages.append(self.msg_queue.get_nowait())
+            except queue.Empty:
+                break
+        return messages
+
     def _recv_loop(self) -> None:
         """接收服务端推送循环。"""
         buffer = ""
@@ -213,8 +313,7 @@ class RoomClient:
                     if not line.strip():
                         continue
                     msg = json.loads(line)
-                    if self.on_message:
-                        self.on_message(msg)
+                    self.msg_queue.put(msg)
             except Exception:
                 break
         self.is_connected = False

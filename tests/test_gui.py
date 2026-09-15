@@ -131,14 +131,93 @@ class TestRoomNet:
         client = RoomClient(port=8099)
         assert client.connect() is True
 
-        received = []
-        client.on_message = lambda m: received.append(m)
-
         client.send({"action": "create", "room_id": "TEST99", "username": "测试房主"})
         time.sleep(0.1)
 
+        received = client.poll_messages()
         assert len(received) >= 1
         assert received[0].get("event") == "created"
 
         client.close()
+        server.stop()
+
+    def test_two_clients_match(self) -> None:
+        """测试两个客户端同时匹配成功撮合为真人对弈。"""
+        import time
+        from gomoku.gui.room_net import RoomClient, RoomHostServer
+
+        server = RoomHostServer(port=8098)
+        assert server.start() is True
+
+        client_a = RoomClient(port=8098)
+        client_b = RoomClient(port=8098)
+        assert client_a.connect() is True
+        assert client_b.connect() is True
+
+        client_a.send({
+            "action": "match", "mode": "ranked", "username": "棋客A", "rank": "青铜"
+        })
+        time.sleep(0.05)
+        client_b.send({
+            "action": "match", "mode": "ranked", "username": "棋客B", "rank": "青铜"
+        })
+        time.sleep(0.1)
+
+        msg_a = client_a.poll_messages()
+        msg_b = client_b.poll_messages()
+        assert len(msg_a) >= 1
+        assert len(msg_b) >= 1
+        assert msg_a[0].get("event") == "start"
+        assert msg_b[0].get("event") == "start"
+
+        client_a.close()
+        client_b.close()
+        server.stop()
+
+    def test_room_two_players_turn_moves(self) -> None:
+        """测试好友房间对弈双端落子同步，确保无 AI 介入。"""
+        import time
+        from gomoku.gui.room_net import RoomClient, RoomHostServer
+
+        server = RoomHostServer(port=8097)
+        assert server.start() is True
+
+        host = RoomClient(port=8097)
+        guest = RoomClient(port=8097)
+        assert host.connect() is True
+        assert guest.connect() is True
+
+        # 房主创建房间
+        host.send({
+            "action": "create", "room_id": "TEST88", "username": "房主", "rank": "青铜"
+        })
+        time.sleep(0.05)
+        # 客方加入房间
+        guest.send({
+            "action": "join", "room_id": "TEST88", "username": "客方", "rank": "青铜"
+        })
+        time.sleep(0.05)
+
+        # 双方均收到 start 事件
+        host_msgs = host.poll_messages()
+        guest_msgs = guest.poll_messages()
+        assert any(m.get("event") == "start" for m in host_msgs)
+        assert any(m.get("event") == "start" for m in guest_msgs)
+
+        # 房主执黑落子 (7, 7)
+        host.send({"action": "move", "x": 7, "y": 7})
+        time.sleep(0.05)
+        guest_moves = guest.poll_messages()
+        assert len(guest_moves) == 1
+        assert guest_moves[0].get("x") == 7 and guest_moves[0].get("y") == 7
+
+        # 客方执白落子 (7, 8)
+        guest.send({"action": "move", "x": 7, "y": 8})
+        time.sleep(0.05)
+        host_moves = host.poll_messages()
+        assert len(host_moves) == 1
+        assert host_moves[0].get("x") == 7 and host_moves[0].get("y") == 8
+
+        host.close()
+        guest.close()
         server.stop()
