@@ -33,8 +33,9 @@ class GomokuApp:
         self.clock = pygame.time.Clock()
         self.is_running: bool = True
 
-        # 设置窗口小图标
+        # 设置窗口小图标与前置激活
         self._set_app_icon()
+        self._bring_to_foreground()
 
         # 音频与档案子系统
         self.sound_mgr = SoundManager()
@@ -49,6 +50,22 @@ class GomokuApp:
             self.profile_mgr, self.sound_mgr, on_start_game=self.start_game
         )
         self.game_scene: Optional[GameScene] = None
+
+    def _bring_to_foreground(self) -> None:
+        """若在 Windows 系统下运行，强制将窗口前置并获取交互焦点。"""
+        if sys.platform != "win32":
+            return
+        try:
+            wm_info = pygame.display.get_wm_info()
+            hwnd = wm_info.get("window")
+            if hwnd:
+                import ctypes
+                user32 = ctypes.windll.user32
+                user32.ShowWindow(hwnd, 5)  # SW_SHOW
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
 
     def _set_app_icon(self) -> None:
         """动态生成黑曜石棋子图标并注入窗口。"""
@@ -103,6 +120,7 @@ class GomokuApp:
 
     def run(self) -> None:
         """主游戏循环，驱动 60 帧刷新、事件处理与场景渲染。"""
+        first_frame: bool = True
         while self.is_running:
             # 1. 全局事件分发
             for event in pygame.event.get():
@@ -136,6 +154,9 @@ class GomokuApp:
 
             # 4. 刷新屏幕
             pygame.display.flip()
+            if first_frame:
+                self._bring_to_foreground()
+                first_frame = False
             self.clock.tick(FPS)
 
         # 退出清理

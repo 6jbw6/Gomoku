@@ -6,6 +6,7 @@
 
 import io
 import math
+import os
 import struct
 import wave
 from typing import Optional
@@ -16,8 +17,8 @@ class SoundManager:
     """音频音效管理器，负责落子声波合成与播放调度。"""
 
     def __init__(self) -> None:
-        """初始化音频子系统与合成缓存。"""
-        self.enabled: bool = True
+        """初始化音频子系统与合成缓存（快速探测，杜绝无声卡环境卡顿）。"""
+        self.enabled: bool = False
         self.stone_sound: Optional[pygame.mixer.Sound] = None
         self.click_sound: Optional[pygame.mixer.Sound] = None
         self.win_sound: Optional[pygame.mixer.Sound] = None
@@ -26,13 +27,21 @@ class SoundManager:
         self._init_mixer()
         if pygame.mixer.get_init():
             self._synthesize_all_sounds()
+            self.enabled = True
 
     def _init_mixer(self) -> None:
-        """初始化 Pygame 混音器。"""
+        """初始化 Pygame 混音器（优先 directsound，无设备时秒级回退 dummy 驱动）。"""
+        if "SDL_AUDIODRIVER" not in os.environ:
+            os.environ["SDL_AUDIODRIVER"] = "directsound"
+
         try:
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-        except Exception as err:
-            print(f"[音频初始化警告] 无法初始化音频设备: {err}")
+        except Exception:
+            try:
+                os.environ["SDL_AUDIODRIVER"] = "dummy"
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+            except Exception as err:
+                print(f"[音频初始化提示] 当前环境无可用音频设备: {err}")
 
     def toggle(self) -> bool:
         """切换音效启用状态并返回当前状态。"""
