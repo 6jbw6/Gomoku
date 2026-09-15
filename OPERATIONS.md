@@ -4,9 +4,10 @@
 **【核心开发与运维守则】**：
 1. **每步记录**：今后进行的任何代码修改、功能新增或配置调整，必须在此文档追加详尽的操作记录。
 2. **文档同步**：每完成一次操作，必须同步检查并更新 [README.md](./README.md)。
-3. **严格语义化 Tag**：遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/) 规范（`vMajor.Minor.Patch`）。
-4. **Git 推送规范**：每次操作完成后，必须执行 `git add`、`git commit`，打上对应版本 Tag，并推送到远端仓库（`git push origin <branch> --tags`）。
-5. **代码规范约束**：全工程必须严格遵循 PEP 8 规范（单行 ≤ 100 字符），所有代码注释与文档必须 100% 中文，严格遵守“东方金石雅韵”零蓝紫色视觉规范。
+3. **双分支工作流 (main + dev)**：开发必须在 `dev` 分支上进行，验证通过后再合并到 `main` 分支。
+4. **严格语义化 Tag**：遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/) 规范（`vMajor.Minor.Patch`），Tag 必须打在 `main` 稳定主干上。
+5. **Git 双分支推送规范**：每次合并后，必须同时推送 `main` 分支、`dev` 分支以及所有标签（`git push origin main --tags` 与 `git push origin dev`）。
+6. **代码规范约束**：全工程必须严格遵循 PEP 8 规范（单行 ≤ 100 字符），所有代码注释与文档必须 100% 中文，严格遵守“东方金石雅韵”零蓝紫色视觉规范。
 
 ---
 
@@ -23,6 +24,7 @@
 | [`v1.0.6`](#v106---彻底移除-ai-灵犀及相关逻辑) | 2026-09-15 | 功能重构 | 移除 AI 灵犀提示与后端机器人代码，全面转为纯真人联机对战 | ✅ 已验证 |
 | [`v1.0.7`](#v107---全流程操作跟踪机制与-git-规范确立) | 2026-09-15 | 流程规范 | 引入 `OPERATIONS.md`，初始化 Git 仓库并严格执行 Tag 推送 | ✅ 已验证 |
 | [`v1.0.8`](#v108---天梯榜棋客数据专属过滤与-readme-格式规范化) | 2026-09-15 | 业务优化 | 天梯榜只展示棋客数据，清理非棋客脏数据，修复 README Markdown 解析规范 | ✅ 已验证 |
+| [`v1.0.9`](#v109---main--dev-双分支开发与合并工作流规范确立) | 2026-09-15 | 流程规范 | 建立主干(main)与开发(dev)双分支模型，开发于 dev 完成验证后合并至 main 打 Tag 发布 | ✅ 已验证 |
 
 ---
 
@@ -178,30 +180,79 @@
 
 ---
 
-## 🚀 持续操作标准作业程序 (SOP)
+### [v1.0.9] - main + dev 双分支开发与合并工作流规范确立
+- **操作日期**：2026-09-15
+- **需求背景**：用户提供 Git 双分支流转图（`main` 主干分支 + `dev` 功能开发分支），要求：“以后写代码要遵守这个”。
+- **具体操作**：
+  1. 本地建立开发分支 `dev`（`git checkout -b dev`），并将其推送到 GitHub 远端关联。
+  2. 正式确立双分支开发生命周期规范：
+     - **`dev` 分支**：日常开发分支。每次承接新需求或缺陷修复时，从最新的 `main` 同步到 `dev`，所有代码编写、静态检查、单元测试、日志与 README 更新均在 `dev` 上提交。
+     - **`main` 分支**：生产发布主干。仅在 `dev` 验证 100% 成功后，通过 `git merge --no-ff dev` 合并入 `main`。
+     - **版本发布与 Tag**：版本语义化 Tag（如 `v1.0.9`）必须签署于 `main` 分支的合并节点上。
+     - **双分支同步推送**：合并完成后，必须同时执行 `git push origin main --tags` 与 `git push origin dev`，保持远端分支完全同步。
+  3. 在 `OPERATIONS.md` 与 `README.md` 中绘制并记录双分支标准流转模型图谱。
+- **验证结果**：
+  - 代码在 `dev` 分支完成修改与全量校验（`flake8` 0 警告，`pytest` 11 项全过）。
+  - 成功合并至 `main` 分支，签署 `v1.0.9` Tag，并推送到 GitHub 远端 `main` 与 `dev` 分支。
 
-今后每当接收到用户的新需求或缺陷修复任务时，必须严格按照以下 5 步 SOP 执行：
+---
+
+## 🚀 持续操作标准作业程序 (SOP - main + dev 双分支模型)
+
+本项目全流程严格遵循下图所示的 **`main`（主干）与 `dev`（开发）双分支协同模型**：
+
+```mermaid
+gitGraph
+    commit id: "main-init"
+    branch dev
+    checkout dev
+    commit id: "dev-feat-1"
+    checkout main
+    commit id: "main-release-1"
+    merge dev id: "merge-v1.0.8" tag: "v1.0.8"
+    checkout dev
+    commit id: "dev-workflow"
+    checkout main
+    merge dev id: "merge-v1.0.9" tag: "v1.0.9"
+```
+
+### 双分支标准开发流转 5 步规程：
 
 ```mermaid
 flowchart TD
-    A["1. 执行开发/修改/测试"] --> B["2. 追加记录 OPERATIONS.md"]
-    B --> C["3. 同步更新 README.md"]
-    C --> D["4. 执行 git commit 并打语义化 tag"]
-    D --> E["5. 执行 git push --tags 推送至 GitHub"]
+    M_START["main 分支 (生产主干)"] -.->|"1. checkout / 同步最新主干"| D_START["dev 分支 (日常开发)"]
+    D_START --> D_CODE["2. 在 dev 分支编码、修复缺陷"]
+    D_CODE --> D_TEST["3. 执行 flake8 检查与 pytest 测试 (100%通过)"]
+    D_TEST --> D_DOCS["4. 更新 OPERATIONS.md (递增Tag) 与 README.md"]
+    D_DOCS --> D_COMMIT["5. git commit & git push origin dev"]
+    D_COMMIT -->|"6. checkout main & git merge --no-ff dev"| M_MERGE["main 分支合并 dev"]
+    M_MERGE --> M_TAG["7. git tag -a vX.Y.Z (签署语义化版本)"]
+    M_TAG --> M_PUSH["8. git push origin main --tags (发布远端)"]
 ```
 
-1. **执行开发与代码验证**：
+1. **切出/同步开发分支 (`dev`)**：
+   ```bash
+   git checkout dev
+   git merge main  # 确保 dev 包含最新主干修改
+   ```
+2. **在 `dev` 分支进行开发与代码验证**：
    - 编写或调整代码，严格保证 PEP 8 规范和中文注释。
    - 运行静态检查：`flake8 gomoku tests --max-line-length=100`。
    - 运行自动化测试：`pytest tests -v`。
-2. **更新操作日志 (`OPERATIONS.md`)**：
-   - 递增版本号 Tag（如 `v1.0.8`、`v1.0.9`、`v1.1.0` 等）。
-   - 记录操作日期、需求背景、具体操作清单与验证结果。
-3. **更新项目说明 (`README.md`)**：
-   - 同步修改功能特性列表、系统配置或架构图谱。
-4. **Git 提交与 Tag 标记**：
-   - `git add .`
-   - `git commit -m "feat/fix/docs: <操作概要说明>"`
-   - `git tag -a <tag_name> -m "<版本说明>"`
-5. **推送到远程仓库**：
-   - `git push origin main --tags`
+3. **更新操作日志与项目说明文档**：
+   - 更新 [OPERATIONS.md](./OPERATIONS.md)：递增版本 Tag，记录需求背景、修改清单与验证结果。
+   - 同步更新 [README.md](./README.md)：保持功能说明与最新代码同步。
+4. **在 `dev` 提交并推送开发进度**：
+   ```bash
+   git add .
+   git commit -m "feat/fix/docs: <操作详细说明> (vX.Y.Z)"
+   git push origin dev
+   ```
+5. **合并至 `main` 主干并发布语义化 Tag**：
+   ```bash
+   git checkout main
+   git merge --no-ff dev -m "merge: 合并 dev 开发分支至 main (vX.Y.Z)"
+   git tag -a vX.Y.Z -m "Release vX.Y.Z: <版本简述>"
+   git push origin main --tags
+   git push origin dev
+   ```

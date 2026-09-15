@@ -115,18 +115,21 @@ gomoku/
 
 ---
 
-## 📜 全流程操作记录与 Git Tag 规范
+## 📜 全流程操作记录与 Git 分支及 Tag 规范
 
-本项目严格遵循**“操作必记录、文档必同步、推送必带Tag”**的企业级作业标准：
+本项目严格遵循**“日常在 dev 开发、验证后合入 main、全流程操作必记录、文档必同步、推送必带 Tag”**的企业级作业标准：
 
-- **全流程操作履历**：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理到天梯榜单过滤的全部操作日志。
-- **语义化版本 Tag 体系**：每一次功能发布或缺陷修复，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.0.8`），并通过 `git push origin <branch> --tags` 推送至远端代码托管仓库。
-- **开发与运维 SOP 流程**：
-  1. 完成功能编码与全量单元测试（`pytest tests -v`）；
-  2. 执行 PEP 8 静态合规检测（`flake8 gomoku tests --max-line-length=100`）；
-  3. 追加操作明细至 [OPERATIONS.md](./OPERATIONS.md)；
-  4. 同步更新 [README.md](./README.md)；
-  5. 提交 Git 并签署语义化 Tag 后推送到远程仓库。
+- **双分支协同模型 (`main` + `dev`)**：
+  - **`main` 分支**：生产稳定主干，仅用于接收经过充分测试的 `dev` 合并，所有版本 Tag 均打在 `main` 上。
+  - **`dev` 分支**：日常开发分支，所有编码、Bug 修复、静态检查与单元测试均在 `dev` 分支上闭环完成。
+- **全流程操作履历**：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理、天梯榜单过滤到分支流转规范的全部操作日志。
+- **语义化版本 Tag 体系**：每一次功能发布或缺陷修复，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.0.9`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
+- **开发与运维 5 步标准作业规程 (SOP)**：
+  1. 切至 `dev` 分支（`git checkout dev && git merge main`）进行编码与缺陷修复；
+  2. 执行 PEP 8 检测（`flake8 gomoku tests --max-line-length=100`）与全量测试（`pytest tests -v`）；
+  3. 更新 [OPERATIONS.md](./OPERATIONS.md)（递增 Tag）与 [README.md](./README.md)；
+  4. 提交并推送到 `dev` 分支（`git commit && git push origin dev`）；
+  5. 切回 `main` 主干合并 `dev`（`git checkout main && git merge --no-ff dev`），签署语义化版本 Tag 并推送到远端（`git push origin main --tags`）。
 
 ---
 
