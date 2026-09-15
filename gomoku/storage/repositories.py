@@ -150,13 +150,14 @@ class UserRepository(IUserRepository):
         return user
 
     async def get_leaderboard(self, limit: int = 50) -> Sequence[UserModel]:
-        """按总胜场与段位排序获取天梯排行榜。"""
+        """按星数、总胜场与段位排序获取天梯排行榜（仅保留棋客数据）。"""
         stmt = (
             select(UserModel)
+            .where(UserModel.username.like("棋客%"))
             .order_by(
-                desc(UserModel.total_matches),
-                desc(UserModel.win_matches),
                 desc(UserModel.stars),
+                desc(UserModel.win_matches),
+                desc(UserModel.total_matches),
             )
             .limit(limit)
         )

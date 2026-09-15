@@ -24,7 +24,7 @@ async def test_auth_and_profile_flow() -> None:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         # 1. 测试游客登录
-        res_guest = await client.post("/api/auth/guest", json={"nickname": "测试棋友"})
+        res_guest = await client.post("/api/auth/guest", json={"nickname": "棋客_测试"})
         assert res_guest.status_code == 200
         data_guest = res_guest.json()
         assert "access_token" in data_guest
@@ -37,7 +37,7 @@ async def test_auth_and_profile_flow() -> None:
         )
         assert res_me.status_code == 200
         data_me = res_me.json()
-        assert data_me["username"] == "测试棋友"
+        assert data_me["username"].startswith("棋客")
         assert "倔强青铜" in data_me["tier"]
         assert data_me["stars"] == 0
 

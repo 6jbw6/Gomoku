@@ -512,24 +512,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     switchView('lobby');
   });
 
-  // 天梯总榜弹窗
+  // 天梯总榜弹窗（只展示棋客数据）
   document.getElementById('btn-leaderboard').addEventListener('click', async () => {
     try {
       const res = await fetch('/api/rank/leaderboard');
       const list = await res.json();
       const tbody = document.getElementById('leaderboard-tbody');
       tbody.innerHTML = '';
-      list.forEach((item) => {
-        const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #3D352E';
-        tr.innerHTML = `
-          <td style="padding:10px;font-weight:bold;color:#D4AF37;">${item.rank}</td>
-          <td style="padding:10px;">${item.username}</td>
-          <td style="padding:10px;"><span class="rank-pill">${item.display_rank}</span></td>
-          <td style="padding:10px;">${item.win_rate}% (${item.win_matches}/${item.total_matches})</td>
+
+      // 仅保留棋客数据
+      const chessGuests = list.filter((item) => item.username && item.username.startsWith('棋客'));
+
+      if (chessGuests.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);">
+              暂无棋客上榜数据
+            </td>
+          </tr>
         `;
-        tbody.appendChild(tr);
-      });
+      } else {
+        chessGuests.forEach((item, idx) => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #3D352E';
+          tr.innerHTML = `
+            <td style="padding:10px;font-weight:bold;color:#D4AF37;">${idx + 1}</td>
+            <td style="padding:10px;">${item.username}</td>
+            <td style="padding:10px;"><span class="rank-pill">${item.display_rank}</span></td>
+            <td style="padding:10px;">${item.win_rate}% (${item.win_matches}/${item.total_matches})</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
       leaderboardModal.classList.add('show');
     } catch (err) {
       alert('加载天梯榜单失败');
