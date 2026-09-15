@@ -117,7 +117,7 @@ gomoku/
   - `main` 分支：生产稳定主干，仅用于接收经过充分测试的 `dev` 合并，所有版本 Tag 均打在 `main` 上。
   - `dev` 分支：日常开发分支，所有编码、Bug 修复、静态检查与单元测试均在 `dev` 分支上闭环完成。
 - 全流程操作履历：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理、天梯榜单过滤、桌面端改造至 Web 代码彻底清理的全部操作日志。
-- 语义化版本 Tag 体系：每一次功能发布或重大重构，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.2.0`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
+- 语义化版本 Tag 体系：每一次功能发布或重大重构，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.2.1`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
 - 开发与运维 5 步标准作业规程 (SOP)：
   1. 切至 `dev` 分支（`git checkout dev && git merge main`）进行编码与开发；
   2. 执行 PEP 8 检测（`flake8 gomoku tests desktop_app.py run.py --max-line-length=100`）与全量测试（`pytest tests -v`）；
@@ -147,13 +147,18 @@ flake8 gomoku tests desktop_app.py run.py --max-line-length=100
 
 ### 3. 启动桌面端原生游戏
 
+方式 A（推荐一键运行）：
+- 在 Windows 资源管理器中直接双击运行工程根目录下的 `启动桌面端.bat`。
+
+方式 B（终端命令启动）：
 ```bash
 python run.py
 # 或直接执行：python desktop_app.py
 ```
 
-终端将启动 1200×800 高清分辨率的东方雅韵五子棋桌面应用：
+终端将毫秒级启动 1200×800 高清分辨率的东方雅韵五子棋桌面应用：
 - **四大对弈模式**：天梯排位赛、休闲匹配赛、本地双人同屏对弈、人机智能切磋；
+- **极速响应启动**：DirectSound 毫秒级探测与 dummy 优雅回退，杜绝无声卡冷启动冻结；
 - **智能落子音效**：数学正弦波物理拟真合成落子“嗒”与按键清脆声，无外部音频资源依赖；
 - **纯正棋客榜**：大厅右侧常驻棋客天梯榜，实时展示段位、胜率与天梯星星；
 - **本地数据自闭环**：胜负自动结算并实时更新 `gomoku_profile.json`。
