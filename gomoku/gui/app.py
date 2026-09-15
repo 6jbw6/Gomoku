@@ -62,7 +62,7 @@ class GomokuApp:
     def _load_and_prepare_background() -> Optional[pygame.Surface]:
         """加载雅室背景图并应用高透东方暖炭黑遮罩。"""
         bg_path = os.path.join(
-            os.path.dirname(__file__), "..", "web", "assets", "theme_bg.jpg"
+            os.path.dirname(__file__), "assets", "theme_bg.jpg"
         )
         if not os.path.exists(bg_path):
             return None
