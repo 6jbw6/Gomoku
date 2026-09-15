@@ -208,3 +208,57 @@ class ModalDialog:
         pygame.draw.rect(surface, COLOR_GOLD_BORDER, box_rect, width=2, border_radius=16)
 
         return box_rect
+
+
+class TextInput:
+    """国风单行文本输入框，专用于房间码输入等交互场景。"""
+
+    def __init__(
+        self,
+        rect: Tuple[int, int, int, int],
+        placeholder: str = "请输入6位房间码",
+        max_length: int = 6,
+        font_size: int = 20,
+    ) -> None:
+        """初始化输入框参数。"""
+        self.rect = pygame.Rect(rect)
+        self.placeholder = placeholder
+        self.max_length = max_length
+        self.font_size = font_size
+        self.text: str = ""
+        self.is_active: bool = False
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """处理键盘输入与焦点切换事件。"""
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.is_active = self.rect.collidepoint(event.pos)
+            return self.is_active
+        if self.is_active and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_BACKSPACE:
+                self.text = self.text[:-1]
+                return True
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return True
+            elif event.unicode and len(self.text) < self.max_length:
+                ch = event.unicode.upper()
+                if ch.isalnum():
+                    self.text += ch
+                    return True
+        return False
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """绘制带金石高光的输入框。"""
+        pygame.draw.rect(surface, (20, 18, 16), self.rect, border_radius=8)
+        border_color = COLOR_GOLD_PRIMARY if self.is_active else COLOR_BORDER_DIM
+        border_width = 2 if self.is_active else 1
+        pygame.draw.rect(surface, border_color, self.rect, width=border_width, border_radius=8)
+
+        font = get_font(self.font_size, bold=True)
+        if self.text:
+            spaced_text = "  ".join(list(self.text))
+            txt_surf = font.render(spaced_text, True, COLOR_GOLD_PRIMARY)
+        else:
+            txt_surf = font.render(self.placeholder, True, (120, 110, 100))
+
+        txt_rect = txt_surf.get_rect(center=self.rect.center)
+        surface.blit(txt_surf, txt_rect)

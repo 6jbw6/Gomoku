@@ -6,9 +6,9 @@
 
 import os
 import sys
-from typing import Optional
+from typing import Any, Optional
 import pygame
-from gomoku.core.enums import GameMode
+from gomoku.core.enums import GameMode, PieceColor
 from gomoku.gui.audio import SoundManager
 from gomoku.gui.constants import (
     COLOR_BG_DARK,
@@ -29,9 +29,12 @@ class GomokuApp:
         pygame.init()
         pygame.display.set_caption(TITLE)
 
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.screen = pygame.display.set_mode(
+            (WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SCALED
+        )
         self.clock = pygame.time.Clock()
         self.is_running: bool = True
+        self.is_fullscreen: bool = False
 
         # 设置窗口小图标与前置激活
         self._set_app_icon()
@@ -47,9 +50,23 @@ class GomokuApp:
         # 场景状态机
         self.current_scene: str = "lobby"
         self.lobby_scene = LobbyScene(
-            self.profile_mgr, self.sound_mgr, on_start_game=self.start_game
+            self.profile_mgr,
+            self.sound_mgr,
+            on_start_game=self.start_game,
+            on_toggle_fullscreen=self.toggle_fullscreen,
         )
         self.game_scene: Optional[GameScene] = None
+
+    def toggle_fullscreen(self) -> None:
+        """切换全屏与窗口化显示模式。"""
+        self.is_fullscreen = not self.is_fullscreen
+        try:
+            pygame.display.toggle_fullscreen()
+        except Exception:
+            flags = pygame.SCALED
+            if self.is_fullscreen:
+                flags |= pygame.FULLSCREEN
+            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
 
     def _bring_to_foreground(self) -> None:
         """若在 Windows 系统下运行，强制将窗口前置并获取交互焦点。"""
@@ -100,16 +117,26 @@ class GomokuApp:
             return None
 
     def start_game(
-        self, mode: GameMode, title: str, is_ai: bool = False
+        self,
+        mode: GameMode,
+        title: str,
+        opponent_name: str = "弈心棋友",
+        opponent_rank: str = "初入棋道",
+        player_color: PieceColor = PieceColor.BLACK,
+        room_client: Any = None,
     ) -> None:
         """从大厅进入对局场景。"""
         self.game_scene = GameScene(
             mode=mode,
             title=title,
-            is_ai=is_ai,
             profile_mgr=self.profile_mgr,
             sound_mgr=self.sound_mgr,
             on_exit=self.back_to_lobby,
+            opponent_name=opponent_name,
+            opponent_rank=opponent_rank,
+            player_color=player_color,
+            room_client=room_client,
+            on_toggle_fullscreen=self.toggle_fullscreen,
         )
         self.current_scene = "game"
 
@@ -127,9 +154,12 @@ class GomokuApp:
                 if event.type == pygame.QUIT:
                     self.is_running = False
                     break
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    if self.current_scene == "game":
-                        self.back_to_lobby()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_F11:
+                        self.toggle_fullscreen()
+                    elif event.key == pygame.K_ESCAPE:
+                        if self.current_scene == "game":
+                            self.back_to_lobby()
 
                 # 分发给当前活跃场景
                 if self.current_scene == "lobby":

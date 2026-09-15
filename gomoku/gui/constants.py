@@ -10,7 +10,7 @@ from typing import Tuple
 WINDOW_WIDTH: int = 1200
 WINDOW_HEIGHT: int = 800
 FPS: int = 60
-TITLE: str = "五子棋天梯竞技平台 (Gomoku Arena)"
+TITLE: str = "五子棋天梯竞技平台"
 
 # 色彩规范（严格杜绝蓝紫色系，采用东方暖金石、沉香木与玄武炭黑）
 COLOR_BG_DARK: Tuple[int, int, int] = (22, 20, 18)             # 玄武岩暖炭黑
