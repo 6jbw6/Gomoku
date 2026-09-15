@@ -50,7 +50,7 @@
 
 系统全栈践行“东方金石雅韵与温润沉香木”视觉设计：
 
-- 沉浸式主题背景：沉香文人茶室对弈雅境 (`gomoku/web/assets/theme_bg.jpg`)，融合双层暖炭黑径向渐变滤镜；
+- 沉浸式主题背景：沉香文人茶室对弈雅境 (`gomoku/web/assets/theme_bg.jpg`)，明亮通透暖炭黑径向渐变滤镜；
 - 界面质感：全站核心卡片、导航栏与弹窗采用高质感毛玻璃半透层 (`backdrop-filter: blur(...)`)；
 - 棋盘主体：沉香金木暖纹理 (`#DDB26F` / `#CCA05A`)；
 - 背景与卡片：玄武岩暖炭黑 (`#161412`) 与沉檀木深褐 (`#231F1C` / `rgba(35, 31, 28, 0.88)`)；
@@ -127,7 +127,7 @@ gomoku/
   - `main` 分支：生产稳定主干，仅用于接收经过充分测试的 `dev` 合并，所有版本 Tag 均打在 `main` 上。
   - `dev` 分支：日常开发分支，所有编码、Bug 修复、静态检查与单元测试均在 `dev` 分支上闭环完成。
 - 全流程操作履历：详见 [OPERATIONS.md](./OPERATIONS.md)，记录了从项目初始化、前端 Canvas 绘制、双向通信、异常修复、AI 清理、天梯榜单过滤到分支流转规范的全部操作日志。
-- 语义化版本 Tag 体系：每一次功能发布或缺陷修复，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.0.11`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
+- 语义化版本 Tag 体系：每一次功能发布或缺陷修复，均打上标准 SemVer 标签（如 `v1.0.0` ~ `v1.0.12`），合并到 `main` 后通过 `git push origin main --tags` 推送至远端代码托管仓库。
 - 开发与运维 5 步标准作业规程 (SOP)：
   1. 切至 `dev` 分支（`git checkout dev && git merge main`）进行编码与缺陷修复；
   2. 执行 PEP 8 检测（`flake8 gomoku tests --max-line-length=100`）与全量测试（`pytest tests -v`）；
