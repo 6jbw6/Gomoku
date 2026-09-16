@@ -76,6 +76,7 @@ class LobbyScene:
         self.brave_bar = ProgressBar((WINDOW_WIDTH - 300, 130, 200, 14))
 
         # 核心三大模式卡片：横向三列排布（排位赛、休闲匹配、好友房间对战）
+        # 三卡统一琥珀金圆角边框，保持视觉规格一致
         card_w, card_h = 330, 290
         start_x = (WINDOW_WIDTH - (card_w * 3 + 45 * 2)) // 2
         start_y = 245
@@ -91,14 +92,14 @@ class LobbyScene:
             # 模式二：单人休闲匹配
             Card(
                 (start_x + card_w + 45, start_y, card_w, card_h),
-                border_gold=False,
+                border_gold=True,
                 clickable=True,
                 on_click=lambda: self._start_matchmaking(GameMode.CASUAL, "单人休闲匹配"),
             ),
             # 模式三：好友房间对战
             Card(
                 (start_x + (card_w + 45) * 2, start_y, card_w, card_h),
-                border_gold=False,
+                border_gold=True,
                 clickable=True,
                 on_click=self._open_room_dialog,
             ),
@@ -111,7 +112,6 @@ class LobbyScene:
         self.match_start_time: float = 0.0
         self.match_retry_count: int = 0
         self.join_retry_done: bool = False
-        self.match_failed_at: float = 0.0
         self.matching_dialog = ModalDialog(width=460, height=280)
         self.btn_cancel_match = Button(
             (0, 0, 140, 42), "取消匹配", style="secondary", on_click=self._cancel_matchmaking
@@ -182,14 +182,13 @@ class LobbyScene:
         return None
 
     def _start_matchmaking(self, mode: GameMode, title: str) -> None:
-        """启动排位或休闲快速匹配。"""
+        """启动排位或休闲快速匹配（不限时检索，直到取消或撮合成功）。"""
         self.sound.play_click()
         self.is_matching = True
         self.match_mode = mode
         self.match_title = title
         self.match_start_time = time.time()
         self.match_retry_count = 0
-        self.match_failed_at = 0.0
 
         if self.match_client:
             self.match_client.close()
@@ -369,23 +368,6 @@ class LobbyScene:
                         )
                         return
 
-            # 若 8 秒内未匹配到其他真实客户端，停止检索并短暂提示
-            elapsed = time.time() - self.match_start_time
-            if elapsed >= 8.0:
-                if self.match_client:
-                    self.match_client.send({"action": "cancel_match"})
-                    self.match_client.close()
-                    self.match_client = None
-
-                self.is_matching = False
-                self.match_failed_at = time.time()
-
-        # 检索失败提示停留 2 秒后自动关闭匹配弹窗
-        if self.match_failed_at > 0:
-            if time.time() - self.match_failed_at >= 2.0:
-                self.matching_dialog.hide()
-                self.match_failed_at = 0.0
-
         # 2. 好友房间流程驱动
         if self.room_dialog.is_visible and self.room_client:
             # 房间主机连接中断时提示玩家关闭弹窗后重试
@@ -529,7 +511,7 @@ class LobbyScene:
             self._draw_leaderboard_dialog(surface)
 
     def _draw_matching_dialog(self, surface: pygame.Surface) -> None:
-        """绘制全屏蒙层居中匹配弹窗。"""
+        """绘制全屏蒙层居中匹配弹窗（不限时检索，可随时取消）。"""
         box = self.matching_dialog.draw_backdrop(surface)
         font_title = get_font(22, bold=True)
         t_surf = font_title.render(f"{self.match_title} - 正在寻找棋友...", True, COLOR_GOLD_PRIMARY)
@@ -539,26 +521,11 @@ class LobbyScene:
         dots = "." * ((int(time.time() * 2) % 4) + 1)
         font_info = get_font(16)
 
-        if self.match_failed_at > 0:
-            # 检索失败：停留 2 秒提示后弹窗自动关闭
-            fail_surf = font_info.render(
-                "很遗憾，暂无在线棋友，已停止检索", True, (220, 38, 38)
-            )
-            surface.blit(fail_surf, fail_surf.get_rect(center=(box.centerx, box.y + 115)))
-            return
-
         info_surf = font_info.render(f"局域网检索相近段位棋友中{dots}", True, COLOR_TEXT_MAIN)
-        remain = max(0, int(8.0 - (time.time() - self.match_start_time)) + 1)
-        countdown_surf = font_info.render(
-            f"{remain} 秒内无对手将停止检索", True, COLOR_TEXT_MUTED
-        )
         surface.blit(info_surf, info_surf.get_rect(center=(box.centerx, box.y + 105)))
-        surface.blit(
-            countdown_surf, countdown_surf.get_rect(center=(box.centerx, box.y + 133))
-        )
 
         timer_surf = font_info.render(f"已匹配用时: {elapsed:02d} 秒", True, COLOR_TEXT_MUTED)
-        surface.blit(timer_surf, timer_surf.get_rect(center=(box.centerx, box.y + 161)))
+        surface.blit(timer_surf, timer_surf.get_rect(center=(box.centerx, box.y + 133)))
 
         self.btn_cancel_match.rect.center = (box.centerx, box.y + 215)
         self.btn_cancel_match.draw(surface)
