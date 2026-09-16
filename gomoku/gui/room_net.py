@@ -6,6 +6,7 @@
 
 import json
 import queue
+import random
 import socket
 import threading
 import time
@@ -416,19 +417,49 @@ def _broadcast_targets() -> List[str]:
     return list(targets)
 
 
-def discover_room_host(
+# 本机网卡 IPv4 地址缓存：过滤本机信标对定向广播的自答
+_local_ip_cache: Optional[List[str]] = None
+
+
+def _local_ips() -> List[str]:
+    """获取本机各网卡的 IPv4 地址列表（解析失败返回空表）。"""
+    global _local_ip_cache
+    if _local_ip_cache is None:
+        try:
+            ips = socket.gethostbyname_ex(socket.gethostname())[2]
+            _local_ip_cache = [ip for ip in ips if not ip.startswith("127.")]
+        except Exception:
+            _local_ip_cache = []
+    return _local_ip_cache
+
+
+def _ip_sort_key(ip: str) -> Tuple[int, int, int, int]:
+    """将点分 IPv4 转为数值元组用于比较（非法地址排最后）。"""
+    try:
+        parts = tuple(int(p) for p in ip.split("."))
+        if len(parts) == 4:
+            return parts  # type: ignore[return-value]
+    except Exception:
+        pass
+    return (255, 255, 255, 255)
+
+
+def discover_room_hosts(
     timeout: float = 1.0,
     discovery_port: int = DEFAULT_DISCOVERY_PORT,
-) -> Optional[Tuple[str, int]]:
-    """向局域网广播探测正在运行的房间服务器。
+) -> List[Tuple[str, int]]:
+    """向局域网广播探测并收集全部房间服务器。
 
-    返回 (服务器地址, 房间端口)；超时未发现任何主机时返回 None。
+    返回所有应答主机的 (地址, 房间端口) 列表；本机信标对
+    定向广播与回环探测的自答会被过滤，确保结果只含机房内
+    其他机器，避免全员自任主机时本机应答掩盖真实远端主机。
     """
     probe = {"type": "discover"}
     payload = json.dumps(probe).encode("utf-8")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.settimeout(0.25)
+    own_ips = set(_local_ips())
+    found: Dict[str, int] = {}
     try:
         rounds = max(1, int(round(timeout / 0.25)))
         targets = _broadcast_targets()
@@ -438,18 +469,39 @@ def discover_room_host(
                     sock.sendto(payload, (target, discovery_port))
                 except Exception:
                     continue
-            try:
-                data, addr = sock.recvfrom(1024)
-                msg = json.loads(data.decode("utf-8"))
+            # 本轮窗口内持续接收，收集所有应答主机（应答有先后）
+            deadline = time.time() + 0.25
+            while True:
+                remain = deadline - time.time()
+                if remain <= 0:
+                    break
+                sock.settimeout(remain)
+                try:
+                    data, addr = sock.recvfrom(1024)
+                except Exception:
+                    break
+                ip = addr[0]
+                # 本机信标自答（定向广播回环/本机回环）不计入结果
+                if ip in own_ips or ip == "127.0.0.1":
+                    continue
+                try:
+                    msg = json.loads(data.decode("utf-8"))
+                except Exception:
+                    continue
                 if msg.get("type") == "server_here":
-                    return addr[0], int(msg.get("port", DEFAULT_ROOM_PORT))
-            except socket.timeout:
-                continue
-            except Exception:
-                continue
-        return None
+                    found[ip] = int(msg.get("port", DEFAULT_ROOM_PORT))
+        return list(found.items())
     finally:
         sock.close()
+
+
+def discover_room_host(
+    timeout: float = 1.0,
+    discovery_port: int = DEFAULT_DISCOVERY_PORT,
+) -> Optional[Tuple[str, int]]:
+    """向局域网广播探测正在运行的房间服务器，返回首个应答主机。"""
+    hosts = discover_room_hosts(timeout=timeout, discovery_port=discovery_port)
+    return hosts[0] if hosts else None
 
 
 def _tcp_alive(host: str, port: int, timeout: float = 0.6) -> bool:
@@ -471,6 +523,12 @@ def invalidate_room_host_cache() -> None:
     _resolved_host_cache = None
 
 
+def set_resolved_room_host(host: str, port: int) -> None:
+    """外部直接设定已解析的服务器地址缓存（收敛迁移后同步缓存）。"""
+    global _resolved_host_cache
+    _resolved_host_cache = (host, port)
+
+
 def resolve_room_host(
     port: int = DEFAULT_ROOM_PORT,
     discovery_port: int = DEFAULT_DISCOVERY_PORT,
@@ -479,12 +537,19 @@ def resolve_room_host(
 
     优先接入局域网（机房/校园网）内已运行的远端主机；
     若无应答则本机自动担任主机并对外广播信标。
+    机房内整机同时启动时各机首轮探测均无应答（最先自任
+    主机的机器信标尚未就绪），全员会同时自任主机导致撮合
+    队列分裂，故自任前随机退避后复探一次错开启动竞争。
     """
     global _resolved_host_cache
     if _resolved_host_cache is not None:
         return _resolved_host_cache
 
     found = discover_room_host(discovery_port=discovery_port)
+    if found is None:
+        time.sleep(random.uniform(0.3, 0.9))
+        found = discover_room_host(discovery_port=discovery_port)
+
     if found is not None and _tcp_alive(found[0], found[1]):
         _resolved_host_cache = found
         return found
@@ -493,6 +558,39 @@ def resolve_room_host(
     fallback = ("127.0.0.1", port)
     _resolved_host_cache = fallback
     return fallback
+
+
+def pick_converge_host(
+    current_host: str,
+    current_port: int,
+    discovery_port: int = DEFAULT_DISCOVERY_PORT,
+) -> Optional[Tuple[str, int]]:
+    """为撮合队列挑选全网统一的收敛迁移目标主机。
+
+    机房整机同时启动时各机同时自任主机，撮合队列被分裂在
+    各自本机服务器上永远撮合不到对手（本地回环连接恒成功，
+    缓存永不失效）。本函数使全网按统一规则收敛到同一台主机：
+    取局域网内 IP 数值最小且存活的远端主机为目标；本机自任
+    主机时仅当目标 IP 小于本机 IP 才迁移，保证存在唯一汇点
+    （IP 最小的机器），杜绝两台自任主机互迁抖动。
+    """
+    hosts = discover_room_hosts(discovery_port=discovery_port)
+    if not hosts:
+        return None
+
+    is_self_host = current_host in ("127.0.0.1", "localhost")
+    my_ips = sorted(_local_ips(), key=_ip_sort_key)
+    my_min = _ip_sort_key(my_ips[0]) if my_ips else None
+
+    for ip, port in sorted(hosts, key=lambda h: _ip_sort_key(h[0])):
+        if (ip, port) == (current_host, current_port):
+            return None  # 已在收敛目标主机上，无需迁移
+        if is_self_host and my_min is not None and not _ip_sort_key(ip) < my_min:
+            # 目标不小于本机 IP：本机即汇点，留守待其他机器向本机收敛
+            continue
+        if _tcp_alive(ip, port, timeout=0.6):
+            return (ip, port)
+    return None
 
 
 # 全局共享房间服务端单例与局域网信标单例
