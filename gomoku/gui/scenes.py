@@ -18,6 +18,7 @@ from gomoku.gui.components import (
     ModalDialog,
     ProgressBar,
     TextInput,
+    clipboard_put_text,
     get_font,
 )
 from gomoku.gui.constants import (
@@ -48,31 +49,22 @@ class LobbyScene:
         profile_mgr: UserProfileManager,
         sound_mgr: SoundManager,
         on_start_game: Any,
-        on_toggle_fullscreen: Optional[Callable[[], None]] = None,
     ) -> None:
         """初始化大厅组件与卡片网格。"""
         self.profile = profile_mgr
         self.sound = sound_mgr
         self.on_start_game = on_start_game
-        self.on_toggle_fullscreen = on_toggle_fullscreen
 
         # 顶部导航栏按键（无 emoji，杜绝中文系统字体显示方块 □）
-        self.btn_fullscreen = Button(
-            (WINDOW_WIDTH - 360, 18, 100, 36),
-            "全屏切换",
-            style="secondary",
-            on_click=self.on_toggle_fullscreen,
-            font_size=14,
-        )
         self.btn_leaderboard = Button(
-            (WINDOW_WIDTH - 245, 18, 95, 36),
+            (WINDOW_WIDTH - 360, 18, 95, 36),
             "天梯榜",
             style="secondary",
             on_click=self._open_leaderboard,
             font_size=14,
         )
         self.btn_sound = Button(
-            (WINDOW_WIDTH - 135, 18, 95, 36),
+            (WINDOW_WIDTH - 245, 18, 95, 36),
             "音效: 开",
             style="secondary",
             on_click=self._toggle_sound,
@@ -127,7 +119,7 @@ class LobbyScene:
         self.matching_dialog.buttons.append(self.btn_cancel_match)
 
         # 好友房间弹窗状态
-        self.room_dialog = ModalDialog(width=520, height=360)
+        self.room_dialog = ModalDialog(width=520, height=400)
         self.room_sub_mode: str = "create"
         self.current_room_code: str = ""
         self.room_error_tip: str = ""
@@ -141,11 +133,17 @@ class LobbyScene:
         self.btn_close_room = Button(
             (0, 0, 140, 42), "关闭返回", style="secondary", on_click=self._close_room_dialog
         )
+        # 复制房间码按钮与“已复制”反馈时限
+        self.btn_copy_code = Button(
+            (0, 0, 170, 40), "复制房间码", on_click=self._copy_room_code
+        )
+        self.copy_feedback_until: float = 0.0
         self.room_dialog.buttons.extend([
             self.btn_tab_create,
             self.btn_tab_join,
             self.btn_join_room,
             self.btn_close_room,
+            self.btn_copy_code,
         ])
 
         # 模态大师榜弹窗
@@ -239,6 +237,15 @@ class LobbyScene:
         self.room_error_tip = ""
         self._start_hosting_room()
 
+    def _copy_room_code(self) -> None:
+        """将当前房间码复制到系统剪贴板并短暂提示已复制。"""
+        self.sound.play_click()
+        ok = clipboard_put_text(self.current_room_code)
+        # 复制成功显示“已复制”1.5 秒；失败提示可手动抄录
+        self.copy_feedback_until = time.time() + 1.5 if ok else 0.0
+        if not ok:
+            self.room_error_tip = "剪贴板不可用，请手动抄录房间码"
+
     def _tab_to_join(self) -> None:
         """切换至加入房间选项卡。"""
         self.sound.play_click()
@@ -304,7 +311,6 @@ class LobbyScene:
             self.room_dialog.handle_event(event)
             return
 
-        self.btn_fullscreen.handle_event(event)
         self.btn_leaderboard.handle_event(event)
         self.btn_sound.handle_event(event)
         for card in self.cards:
@@ -445,7 +451,6 @@ class LobbyScene:
         brand_surf = font_brand.render("五子棋天梯竞技平台", True, COLOR_GOLD_PRIMARY)
         surface.blit(brand_surf, (60, 20))
 
-        self.btn_fullscreen.draw(surface)
         self.btn_leaderboard.draw(surface)
         self.btn_sound.draw(surface)
 
@@ -574,29 +579,35 @@ class LobbyScene:
         if self.room_sub_mode == "create":
             font_tip = get_font(15)
             tip1 = font_tip.render("您的专属 6 位房间码：", True, COLOR_TEXT_MAIN)
-            surface.blit(tip1, tip1.get_rect(center=(box.centerx, box.y + 115)))
+            surface.blit(tip1, tip1.get_rect(center=(box.centerx, box.y + 110)))
 
             font_code = get_font(32, bold=True)
             spaced_code = "  ".join(list(self.current_room_code))
             code_surf = font_code.render(spaced_code, True, COLOR_GOLD_PRIMARY)
-            surface.blit(code_surf, code_surf.get_rect(center=(box.centerx, box.y + 165)))
+            surface.blit(code_surf, code_surf.get_rect(center=(box.centerx, box.y + 158)))
+
+            # 复制房间码按钮：点击后 1.5 秒内显示“已复制”反馈
+            copied = time.time() < self.copy_feedback_until
+            self.btn_copy_code.text = "已复制到剪贴板" if copied else "复制房间码"
+            self.btn_copy_code.rect = pygame.Rect(box.centerx - 85, box.y + 205, 170, 40)
+            self.btn_copy_code.draw(surface)
 
             dots = "." * ((int(time.time() * 2) % 4) + 1)
             wait_surf = font_tip.render(f"等待好友输入房间码加入中{dots}", True, COLOR_GOLD_PRIMARY)
-            surface.blit(wait_surf, wait_surf.get_rect(center=(box.centerx, box.y + 215)))
+            surface.blit(wait_surf, wait_surf.get_rect(center=(box.centerx, box.y + 262)))
 
-            tip2 = font_tip.render("好友输入后将自动同步进入对局，无需多余操作", True, COLOR_TEXT_MUTED)
-            surface.blit(tip2, tip2.get_rect(center=(box.centerx, box.y + 245)))
+            tip2 = font_tip.render("复制后经聊天工具发给好友即可远程入座", True, COLOR_TEXT_MUTED)
+            surface.blit(tip2, tip2.get_rect(center=(box.centerx, box.y + 292)))
 
             self.btn_close_room.text = "取消等待并返回"
-            self.btn_close_room.rect = pygame.Rect(box.centerx - 75, box.y + 295, 150, 42)
+            self.btn_close_room.rect = pygame.Rect(box.centerx - 75, box.y + 330, 150, 38)
             self.btn_close_room.draw(surface)
         else:
             font_tip = get_font(15)
             tip_join = font_tip.render("请输入好友发给您的 6 位房间码：", True, COLOR_TEXT_MAIN)
             surface.blit(tip_join, tip_join.get_rect(center=(box.centerx, box.y + 115)))
 
-            self.room_input.rect.center = (box.centerx, box.y + 175)
+            self.room_input.rect.center = (box.centerx, box.y + 172)
             self.room_input.draw(surface)
 
             if self.room_error_tip:
@@ -605,6 +616,11 @@ class LobbyScene:
                 err_col = (220, 38, 38) if is_err else COLOR_GOLD_PRIMARY
                 err_surf = font_err.render(self.room_error_tip, True, err_col)
                 surface.blit(err_surf, err_surf.get_rect(center=(box.centerx, box.y + 225)))
+            else:
+                tip_paste = font_tip.render(
+                    "键盘直接输入，或复制房间码后按 Ctrl+V 粘贴", True, COLOR_TEXT_MUTED
+                )
+                surface.blit(tip_paste, tip_paste.get_rect(center=(box.centerx, box.y + 228)))
 
             self.btn_join_room.rect.center = (box.centerx - 85, box.y + 295)
             self.btn_close_room.rect.center = (box.centerx + 85, box.y + 295)
@@ -656,12 +672,11 @@ class GameScene:
         title: str,
         profile_mgr: UserProfileManager,
         sound_mgr: SoundManager,
-        on_exit: Any,
+        on_exit: Callable[[], None],
         opponent_name: str = "弈心棋友",
         opponent_rank: str = "初入棋道",
         player_color: PieceColor = PieceColor.BLACK,
         room_client: Optional[RoomClient] = None,
-        on_toggle_fullscreen: Optional[Callable[[], None]] = None,
     ) -> None:
         """初始化对弈场景。"""
         self.mode = mode
@@ -674,7 +689,6 @@ class GameScene:
         self.player_color = player_color
         self.opponent_color = player_color.opponent
         self.room_client = room_client
-        self.on_toggle_fullscreen = on_toggle_fullscreen
 
         # 核心规则引擎与棋盘数据
         self.board = Board()
@@ -703,15 +717,8 @@ class GameScene:
         self.settlement_dialog.buttons.append(self.btn_confirm)
 
         # 顶部与底部操作按键
-        self.btn_fullscreen = Button(
-            (WINDOW_WIDTH - 330, 18, 100, 36),
-            "全屏切换",
-            style="secondary",
-            on_click=self.on_toggle_fullscreen,
-            font_size=14,
-        )
         self.btn_back = Button(
-            (WINDOW_WIDTH - 210, 18, 150, 36),
+            (WINDOW_WIDTH - 245, 18, 150, 36),
             "返回大厅",
             style="secondary",
             on_click=self._handle_resign,
@@ -793,7 +800,6 @@ class GameScene:
             self.settlement_dialog.handle_event(event)
             return
 
-        self.btn_fullscreen.handle_event(event)
         self.btn_back.handle_event(event)
         self.btn_resign.handle_event(event)
 
@@ -838,11 +844,10 @@ class GameScene:
 
     def draw(self, surface: pygame.Surface) -> None:
         """绘制对弈界面（棋盘、信息卡片、计时器与结算）。"""
-        # 1. 顶部模式说明与全屏/返回按键
+        # 1. 顶部模式说明与返回按键
         font_title = get_font(20, bold=True)
         t_surf = font_title.render(f"【{self.title}】", True, COLOR_GOLD_PRIMARY)
         surface.blit(t_surf, (60, 20))
-        self.btn_fullscreen.draw(surface)
         self.btn_back.draw(surface)
 
         # 2. 棋盘绘制

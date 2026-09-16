@@ -37,7 +37,6 @@ class GomokuApp:
         )
         self.clock = pygame.time.Clock()
         self.is_running: bool = True
-        self.is_fullscreen: bool = False
 
         # 设置窗口小图标与前置激活
         self._set_app_icon()
@@ -56,20 +55,8 @@ class GomokuApp:
             self.profile_mgr,
             self.sound_mgr,
             on_start_game=self.start_game,
-            on_toggle_fullscreen=self.toggle_fullscreen,
         )
         self.game_scene: Optional[GameScene] = None
-
-    def toggle_fullscreen(self) -> None:
-        """切换全屏与窗口化显示模式。"""
-        self.is_fullscreen = not self.is_fullscreen
-        try:
-            pygame.display.toggle_fullscreen()
-        except Exception:
-            flags = pygame.SCALED
-            if self.is_fullscreen:
-                flags |= pygame.FULLSCREEN
-            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
 
     def _bring_to_foreground(self) -> None:
         """若在 Windows 系统下运行，强制将窗口前置并获取交互焦点。"""
@@ -139,7 +126,6 @@ class GomokuApp:
             opponent_rank=opponent_rank,
             player_color=player_color,
             room_client=room_client,
-            on_toggle_fullscreen=self.toggle_fullscreen,
         )
         self.current_scene = "game"
 
@@ -158,9 +144,7 @@ class GomokuApp:
                     self.is_running = False
                     break
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_F11:
-                        self.toggle_fullscreen()
-                    elif event.key == pygame.K_ESCAPE:
+                    if event.key == pygame.K_ESCAPE:
                         if self.current_scene == "game":
                             self.back_to_lobby()
 
