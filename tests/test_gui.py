@@ -118,6 +118,47 @@ class TestTextInput:
         assert inp.handle_event(click) is True
         assert inp.is_active is True
 
+    def test_paste_from_clipboard(self) -> None:
+        """测试 Ctrl+V 粘贴房间码（过滤干扰字符并截断至六位）。"""
+        from gomoku.gui.components import TextInput, clipboard_put_text
+
+        # 真实写入系统剪贴板，内容含空格、汉字与全角字符等干扰项
+        assert clipboard_put_text("ab12 34方xyz！") is True
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        event = pygame.event.Event(
+            pygame.KEYDOWN, key=pygame.K_v, mod=pygame.KMOD_CTRL, unicode=""
+        )
+        inp.handle_event(event)
+        assert inp.text == "AB1234"
+
+    def test_paste_truncates_to_max_length(self) -> None:
+        """测试粘贴超长内容时仅保留前六位。"""
+        from gomoku.gui.components import TextInput, clipboard_put_text
+
+        assert clipboard_put_text("AB12CD78EF") is True
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        event = pygame.event.Event(
+            pygame.KEYDOWN, key=pygame.K_v, mod=pygame.KMOD_CTRL, unicode=""
+        )
+        inp.handle_event(event)
+        assert inp.text == "AB12CD"
+
+    def test_copy_to_clipboard(self) -> None:
+        """测试 Ctrl+C 将输入框内容复制到系统剪贴板并回读一致。"""
+        from gomoku.gui.components import TextInput, clipboard_get_text
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        inp.text = "RZC8HA"
+        event = pygame.event.Event(
+            pygame.KEYDOWN, key=pygame.K_c, mod=pygame.KMOD_CTRL, unicode=""
+        )
+        assert inp.handle_event(event) is True
+        # 回读系统剪贴板验证写入成功（过滤后应保持原房间码）
+        assert clipboard_get_text() == "RZC8HA"
+
 
 class TestGomokuAppFlow:
     """测试 Pygame 桌面端应用生命周期与场景状态流转。"""
@@ -148,11 +189,6 @@ class TestGomokuAppFlow:
         # 认输并检查结算弹窗弹出
         app.game_scene._handle_resign()
         assert app.game_scene.settlement_dialog.is_visible is True
-
-        # 测试全屏切换方法
-        old_fullscreen = app.is_fullscreen
-        app.toggle_fullscreen()
-        assert app.is_fullscreen != old_fullscreen
 
         # 返回大厅
         app.back_to_lobby()

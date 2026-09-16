@@ -4,6 +4,7 @@
 严格遵循 PEP 8 规范，所有注释采用中文。
 """
 
+import sys
 from typing import Callable, List, Optional, Tuple
 import pygame
 from gomoku.gui.constants import (
@@ -32,6 +33,116 @@ def get_font(size: int, bold: bool = False) -> pygame.font.Font:
     font = pygame.font.SysFont(font_names, size, bold=bold)
     _FONT_CACHE[key] = font
     return font
+
+
+def _win_clipboard_put(text: str) -> bool:
+    """经 Windows 原生接口将 UTF-16 文本写入系统剪贴板。"""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    # 64 位下句柄为指针宽度，必须显式声明返回类型防止截断
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+
+    cf_unicode_text = 13
+    gmem_moveable = 0x0002
+    data = text.encode("utf-16-le") + b"\x00\x00"
+    if not user32.OpenClipboard(None):
+        return False
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(gmem_moveable, len(data))
+        if not handle:
+            return False
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return False
+        try:
+            ctypes.memmove(ptr, data, len(data))
+        finally:
+            kernel32.GlobalUnlock(handle)
+        if not user32.SetClipboardData(cf_unicode_text, handle):
+            kernel32.GlobalFree(handle)
+            return False
+        return True
+    finally:
+        user32.CloseClipboard()
+
+
+def _win_clipboard_get() -> str:
+    """经 Windows 原生接口读取系统剪贴板 UTF-16 文本。"""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    user32.GetClipboardData.argtypes = [ctypes.c_uint]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+
+    cf_unicode_text = 13
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(cf_unicode_text)
+        if not handle:
+            return ""
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return ""
+        try:
+            return ctypes.wstring_at(ptr)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def clipboard_put_text(text: str) -> bool:
+    """将文本写入系统剪贴板（Windows 原生接口，失败静默返回 False）。"""
+    try:
+        if sys.platform == "win32":
+            return _win_clipboard_put(text)
+        import pygame.scrap
+        if not pygame.scrap.get_init():
+            return False
+        pygame.scrap.put(pygame.SCRAP_TEXT, text.encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+
+def clipboard_get_text() -> str:
+    """读取系统剪贴板文本并仅保留半角字母与数字（失败返回空串）。
+
+    房间码为纯半角字母数字，此处过滤掉粘贴文本中的空格、
+    换行、汉字与全角字符等干扰内容，便于直接粘贴好友发来的房间码。
+    """
+    try:
+        if sys.platform == "win32":
+            text = _win_clipboard_get()
+        else:
+            import pygame.scrap
+            if not pygame.scrap.get_init():
+                return ""
+            raw = pygame.scrap.get(pygame.SCRAP_TEXT)
+            if raw is None:
+                return ""
+            text = raw.decode("utf-8", errors="ignore") if isinstance(
+                raw, bytes
+            ) else str(raw)
+    except Exception:
+        return ""
+    return "".join(
+        c for c in text.upper() if ("A" <= c <= "Z" or "0" <= c <= "9")
+    )
 
 
 class Button:
@@ -242,10 +353,21 @@ class TextInput:
             self.is_active = self.rect.collidepoint(event.pos)
             return self.is_active
         if self.is_active and event.type == pygame.KEYDOWN:
+            key_mod = getattr(event, "mod", 0)
             if event.key == pygame.K_BACKSPACE:
                 self.text = self.text[:-1]
                 return True
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return True
+            elif key_mod & pygame.KMOD_CTRL and event.key == pygame.K_v:
+                # 粘贴：从系统剪贴板过滤出字母数字并补齐至满位
+                pasted = clipboard_get_text()
+                if pasted:
+                    self.text = (self.text + pasted)[: self.max_length]
+                return True
+            elif key_mod & pygame.KMOD_CTRL and event.key == pygame.K_c:
+                # 复制：将输入框现有内容写入系统剪贴板
+                clipboard_put_text(self.text)
                 return True
             elif len(self.text) < self.max_length:
                 ch = self._resolve_input_char(event)
