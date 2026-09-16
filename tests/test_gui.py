@@ -159,6 +159,25 @@ class TestTextInput:
         # 回读系统剪贴板验证写入成功（过滤后应保持原房间码）
         assert clipboard_get_text() == "RZC8HA"
 
+    def test_textinput_channel_with_dedup(self) -> None:
+        """测试 TEXTINPUT 事件通道（KEYDOWN 未录入时兜底，已录入时去重）。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        # 场景A：KEYDOWN 键码 unicode 均丢失，TEXTINPUT 携带字符兜底录入
+        kd = pygame.event.Event(pygame.KEYDOWN, key=0, unicode="")
+        inp.handle_event(kd)
+        ti = pygame.event.Event(pygame.TEXTINPUT, text="a")
+        inp.handle_event(ti)
+        assert inp.text == "A"
+        # 场景B：KEYDOWN 已录入，紧随的 TEXTINPUT 不得重复录入
+        kd2 = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_b, unicode="b")
+        inp.handle_event(kd2)
+        ti2 = pygame.event.Event(pygame.TEXTINPUT, text="b")
+        inp.handle_event(ti2)
+        assert inp.text == "AB"
+
 
 class TestGomokuAppFlow:
     """测试 Pygame 桌面端应用生命周期与场景状态流转。"""

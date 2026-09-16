@@ -346,14 +346,34 @@ class TextInput:
         self.font_size = font_size
         self.text: str = ""
         self.is_active: bool = False
+        # 本次 KEYDOWN 已录入的字符（TEXTINPUT 紧随其后时据此去重）
+        self._keydown_pending: str = ""
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理键盘输入与焦点切换事件。"""
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.is_active = self.rect.collidepoint(event.pos)
             return self.is_active
+        if (
+            self.is_active
+            and event.type == pygame.TEXTINPUT
+            and hasattr(event, "text")
+        ):
+            # 文本输入通道兜底：KEYDOWN 的键码与 unicode 均被
+            # 输入法深度拦截丢失时，TEXTINPUT 仍可能携带字符；
+            # 紧随 KEYDOWN 而来时若 KEYDOWN 已录入则跳过防重复
+            if not self._keydown_pending:
+                for ch in event.text:
+                    ch = ch.upper()
+                    if len(self.text) < self.max_length and (
+                        "A" <= ch <= "Z" or "0" <= ch <= "9"
+                    ):
+                        self.text += ch
+            self._keydown_pending = ""
+            return True
         if self.is_active and event.type == pygame.KEYDOWN:
             key_mod = getattr(event, "mod", 0)
+            self._keydown_pending = ""
             if event.key == pygame.K_BACKSPACE:
                 self.text = self.text[:-1]
                 return True
@@ -373,6 +393,7 @@ class TextInput:
                 ch = self._resolve_input_char(event)
                 if ch:
                     self.text += ch
+                    self._keydown_pending = ch
                     return True
         return False
 

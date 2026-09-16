@@ -134,12 +134,44 @@ class GomokuApp:
         self.current_scene = "lobby"
         self.game_scene = None
 
+    def _diag_log(self, path: str, event: pygame.event.Event) -> None:
+        """诊断日志：记录收到的输入事件与关键状态（GOMOKU_DIAG 环境变量触发）。"""
+        import time
+
+        if event.type not in (
+            pygame.KEYDOWN, pygame.TEXTINPUT, pygame.TEXTEDITING,
+            pygame.MOUSEBUTTONDOWN,
+        ):
+            return
+        lobby = getattr(self, "lobby_scene", None)
+        state = ""
+        if lobby is not None:
+            state = (
+                f" scene={self.current_scene}"
+                f" room_dialog={lobby.room_dialog.is_visible}"
+                f" input_active={lobby.room_input.is_active}"
+                f" input_text={lobby.room_input.text!r}"
+                f" sub_mode={lobby.room_sub_mode}"
+            )
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(
+                f"{time.time():.3f} type={event.type}"
+                f" key={getattr(event, 'key', '')}"
+                f" unicode={getattr(event, 'unicode', '')!r}"
+                f" text={getattr(event, 'text', '')!r}"
+                f" pos={getattr(event, 'pos', '')}"
+                f" mod={getattr(event, 'mod', '')}{state}\n"
+            )
+
     def run(self) -> None:
         """主游戏循环，驱动 60 帧刷新、事件处理与场景渲染。"""
+        diag_path = os.environ.get("GOMOKU_DIAG")
         first_frame: bool = True
         while self.is_running:
             # 1. 全局事件分发
             for event in pygame.event.get():
+                if diag_path:
+                    self._diag_log(diag_path, event)
                 if event.type == pygame.QUIT:
                     self.is_running = False
                     break
