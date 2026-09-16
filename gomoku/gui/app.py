@@ -167,8 +167,10 @@ class GomokuApp:
                 elif self.current_scene == "game" and self.game_scene:
                     self.game_scene.handle_event(event)
 
-            # 2. 逻辑更新
-            if self.current_scene == "game" and self.game_scene:
+            # 2. 逻辑更新（大厅需驱动匹配撮合与房间事件轮询）
+            if self.current_scene == "lobby":
+                self.lobby_scene.update()
+            elif self.current_scene == "game" and self.game_scene:
                 self.game_scene.update()
 
             # 3. 画面渲染

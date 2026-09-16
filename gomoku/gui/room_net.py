@@ -12,6 +12,7 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 DEFAULT_ROOM_PORT = 8088
+DEFAULT_DISCOVERY_PORT = 8089
 
 
 class RoomSession:
@@ -46,6 +47,8 @@ class RoomHostServer:
         self.is_running: bool = False
         self.rooms: Dict[str, RoomSession] = {}
         self.match_queues: Dict[str, List[dict]] = {"ranked": [], "casual": []}
+        # 连接 → (房间号, 是否房主) 映射：撮合建房时需跨线程登记双方身份
+        self.conn_room_map: Dict[socket.socket, Tuple[str, bool]] = {}
         self.lock = threading.Lock()
 
     def start(self) -> bool:
@@ -88,8 +91,6 @@ class RoomHostServer:
     def _handle_client(self, conn: socket.socket) -> None:
         """处理单客户端连接帧通信。"""
         buffer = ""
-        current_room_id: Optional[str] = None
-        is_host: bool = False
 
         try:
             while self.is_running:
@@ -110,8 +111,7 @@ class RoomHostServer:
                         rank = msg.get("rank", "初入棋道")
                         with self.lock:
                             self.rooms[room_id] = RoomSession(room_id, conn, username, rank)
-                        current_room_id = room_id
-                        is_host = True
+                            self.conn_room_map[conn] = (room_id, True)
                         self._send(conn, {"event": "created", "room_id": room_id})
 
                     elif action == "join":
@@ -130,9 +130,7 @@ class RoomHostServer:
                             session.guest_name = username
                             session.guest_rank = rank
                             session.is_started = True
-
-                            current_room_id = room_id
-                            is_host = False
+                            self.conn_room_map[conn] = (room_id, False)
 
                             h_name = session.host_name
                             g_name = username
@@ -182,8 +180,11 @@ class RoomHostServer:
                                 ms.is_started = True
                                 self.rooms[m_id] = ms
 
-                                current_room_id = m_id
-                                is_host = False
+                                # 撮合建房须同步登记双方连接身份：
+                                # 先入队的房主线程无法感知自己已被撮合，
+                                # 须通过映射表跨线程登记其 (房间号, 是否房主)
+                                self.conn_room_map[conn] = (m_id, False)
+                                self.conn_room_map[peer_conn] = (m_id, True)
 
                                 p_name = peer_name
                                 u_name = username
@@ -223,26 +224,36 @@ class RoomHostServer:
 
                     elif action in ("move", "surrender"):
                         with self.lock:
-                            session = self.rooms.get(current_room_id)
+                            room_info = self.conn_room_map.get(conn)
+                            session = self.rooms.get(room_info[0]) if room_info else None
                             if session:
-                                target = session.guest_conn if is_host else session.host_conn
+                                target = (
+                                    session.guest_conn if room_info[1] else session.host_conn
+                                )
                                 if target:
                                     self._send(target, msg)
         except Exception:
             pass
         finally:
             conn.close()
-            if current_room_id:
-                with self.lock:
-                    session = self.rooms.get(current_room_id)
+            with self.lock:
+                # 断线时移出匹配队列并清理房间映射
+                for q in self.match_queues.values():
+                    q[:] = [item for item in q if item["conn"] != conn]
+                room_info = self.conn_room_map.pop(conn, None)
+                if room_info:
+                    session = self.rooms.get(room_info[0])
                     if session:
-                        target = session.guest_conn if is_host else session.host_conn
+                        target = (
+                            session.guest_conn if room_info[1] else session.host_conn
+                        )
                         if target:
                             try:
                                 self._send(target, {"event": "opponent_quit"})
                             except Exception:
                                 pass
-                        del self.rooms[current_room_id]
+                            self.conn_room_map.pop(target, None)
+                        del self.rooms[room_info[0]]
 
     @staticmethod
     def _send(conn: socket.socket, data: dict) -> None:
@@ -328,14 +339,176 @@ class RoomClient:
                 pass
 
 
-# 全局共享房间服务端单例
+class LanBeacon:
+    """局域网 UDP 广播应答信标。
+
+    监听发现端口并即时回应本机房间服务器地址，
+    使同机房与校园网内其他机器的客户端可自动发现并接入本机对战服务。
+    """
+
+    def __init__(
+        self,
+        port: int = DEFAULT_DISCOVERY_PORT,
+        room_port: int = DEFAULT_ROOM_PORT,
+    ) -> None:
+        """初始化信标监听端口与对外通告的房间端口。"""
+        self.port = port
+        self.room_port = room_port
+        self.sock: Optional[socket.socket] = None
+        self.is_running: bool = False
+
+    def start(self) -> bool:
+        """启动应答后台线程，端口被占用时返回 False。"""
+        if self.is_running:
+            return True
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sock.bind(("", self.port))
+            self.sock.settimeout(1.0)
+            self.is_running = True
+            t = threading.Thread(target=self._serve_loop, daemon=True)
+            t.start()
+            return True
+        except Exception:
+            self.is_running = False
+            return False
+
+    def stop(self) -> None:
+        """停止信标并释放套接字。"""
+        self.is_running = False
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+
+    def _serve_loop(self) -> None:
+        """循环接收发现请求并回应服务器在线帧。"""
+        while self.is_running and self.sock:
+            try:
+                data, addr = self.sock.recvfrom(1024)
+                msg = json.loads(data.decode("utf-8"))
+                if msg.get("type") == "discover":
+                    reply = {"type": "server_here", "port": self.room_port}
+                    self.sock.sendto(json.dumps(reply).encode("utf-8"), addr)
+            except socket.timeout:
+                continue
+            except Exception:
+                if not self.is_running:
+                    break
+                continue
+
+
+def _broadcast_targets() -> List[str]:
+    """枚举局域网探测目标地址（受限广播、定向广播与本机回环）。"""
+    targets = {"255.255.255.255", "127.0.0.1"}
+    try:
+        local_ips = socket.gethostbyname_ex(socket.gethostname())[2]
+    except Exception:
+        local_ips = []
+    for ip in local_ips:
+        parts = ip.split(".")
+        if len(parts) != 4 or parts[0] in ("127", "169"):
+            continue
+        targets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.255")
+        targets.add(f"{parts[0]}.{parts[1]}.255.255")
+    return list(targets)
+
+
+def discover_room_host(
+    timeout: float = 1.0,
+    discovery_port: int = DEFAULT_DISCOVERY_PORT,
+) -> Optional[Tuple[str, int]]:
+    """向局域网广播探测正在运行的房间服务器。
+
+    返回 (服务器地址, 房间端口)；超时未发现任何主机时返回 None。
+    """
+    probe = {"type": "discover"}
+    payload = json.dumps(probe).encode("utf-8")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(0.25)
+    try:
+        rounds = max(1, int(round(timeout / 0.25)))
+        targets = _broadcast_targets()
+        for _ in range(rounds):
+            for target in targets:
+                try:
+                    sock.sendto(payload, (target, discovery_port))
+                except Exception:
+                    continue
+            try:
+                data, addr = sock.recvfrom(1024)
+                msg = json.loads(data.decode("utf-8"))
+                if msg.get("type") == "server_here":
+                    return addr[0], int(msg.get("port", DEFAULT_ROOM_PORT))
+            except socket.timeout:
+                continue
+            except Exception:
+                continue
+        return None
+    finally:
+        sock.close()
+
+
+def _tcp_alive(host: str, port: int, timeout: float = 0.6) -> bool:
+    """探测远端房间服务器 TCP 端口是否可正常接入。"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+# 已解析的房间服务器地址缓存（避免每次连接都重复广播探测）
+_resolved_host_cache: Optional[Tuple[str, int]] = None
+
+
+def invalidate_room_host_cache() -> None:
+    """清空已解析的服务器地址缓存（链路失效后重新发现用）。"""
+    global _resolved_host_cache
+    _resolved_host_cache = None
+
+
+def resolve_room_host(
+    port: int = DEFAULT_ROOM_PORT,
+    discovery_port: int = DEFAULT_DISCOVERY_PORT,
+) -> Tuple[str, int]:
+    """解析当前可用的房间服务器地址。
+
+    优先接入局域网（机房/校园网）内已运行的远端主机；
+    若无应答则本机自动担任主机并对外广播信标。
+    """
+    global _resolved_host_cache
+    if _resolved_host_cache is not None:
+        return _resolved_host_cache
+
+    found = discover_room_host(discovery_port=discovery_port)
+    if found is not None and _tcp_alive(found[0], found[1]):
+        _resolved_host_cache = found
+        return found
+
+    get_or_start_room_server(port=port)
+    fallback = ("127.0.0.1", port)
+    _resolved_host_cache = fallback
+    return fallback
+
+
+# 全局共享房间服务端单例与局域网信标单例
 global_room_server: Optional[RoomHostServer] = None
+global_lan_beacon: Optional[LanBeacon] = None
 
 
 def get_or_start_room_server(port: int = DEFAULT_ROOM_PORT) -> Tuple[bool, RoomHostServer]:
-    """获取或启动本地房间服务端单例。"""
-    global global_room_server
+    """获取或启动本地房间服务端单例，并同步开启局域网广播信标。"""
+    global global_room_server, global_lan_beacon
     if global_room_server is None:
         global_room_server = RoomHostServer(port=port)
     started = global_room_server.start()
+    if started and global_lan_beacon is None:
+        # 开启 UDP 信标，使同机房/校园网其他机器可以发现本机服务
+        beacon = LanBeacon(room_port=port)
+        if beacon.start():
+            global_lan_beacon = beacon
     return started, global_room_server

@@ -1,6 +1,6 @@
-"""五子棋桌面端 GUI 与 AI 启发式引擎单元测试。
+"""五子棋桌面端 GUI 与局域网联机单元测试。
 
-测试 Pygame 视口几何转换、本地档案状态结算与 AI 决策逻辑。
+测试 Pygame 视口几何转换、本地档案状态结算与局域网联机通信逻辑。
 严格遵循 PEP 8 规范，所有注释采用中文。
 """
 
@@ -11,37 +11,10 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame  # noqa: E402
-from gomoku.core.board import Board  # noqa: E402
 from gomoku.core.enums import GameMode, PieceColor  # noqa: E402
-from gomoku.gui.ai import GomokuAI  # noqa: E402
 from gomoku.gui.app import GomokuApp  # noqa: E402
 from gomoku.gui.board_view import BoardView  # noqa: E402
 from gomoku.gui.profile import UserProfileManager  # noqa: E402
-
-
-class TestGomokuAI:
-    """测试启发式人机对弈评估引擎。"""
-
-    def test_empty_board_move(self) -> None:
-        """测试空棋盘时首选天元中心点 (7, 7)。"""
-        board = Board()
-        ai = GomokuAI(ai_color=PieceColor.WHITE)
-        move = ai.select_best_move(board)
-        assert move == (7, 7)
-
-    def test_block_opponent_winning_move(self) -> None:
-        """测试 AI 会精准拦截黑方即将成五的杀招。"""
-        board = Board()
-        # 黑方形成 (7, 3), (7, 4), (7, 5), (7, 6) 四连
-        for x in [3, 4, 5, 6]:
-            board.place_piece(x, 7, PieceColor.BLACK)
-            if x != 6:
-                board.place_piece(x, 0, PieceColor.WHITE)  # 占位防止交替检查报错
-
-        ai = GomokuAI(ai_color=PieceColor.WHITE)
-        move = ai.select_best_move(board)
-        # 最佳防守点必须是两端之一：(7, 2) 或 (7, 7)
-        assert move in [(2, 7), (7, 7)]
 
 
 class TestBoardView:
@@ -221,3 +194,60 @@ class TestRoomNet:
         host.close()
         guest.close()
         server.stop()
+
+    def test_lan_beacon_discovery(self) -> None:
+        """测试 UDP 信标应答与局域网主机自动发现。"""
+        import socket as sk
+
+        from gomoku.gui.room_net import LanBeacon, RoomHostServer, discover_room_host
+
+        # 本机场景下应答源地址由内核路由决定（可能为回环或虚拟网卡地址）
+        server = RoomHostServer(port=18088)
+        assert server.start() is True
+        beacon = LanBeacon(port=18089, room_port=18088)
+        assert beacon.start() is True
+
+        found = discover_room_host(timeout=0.8, discovery_port=18089)
+        assert found is not None
+        assert found[1] == 18088
+
+        # 验证发现的地址可真实接入本机房间服务器
+        with sk.create_connection(found, timeout=1.0):
+            pass
+
+        beacon.stop()
+        server.stop()
+
+    def test_discover_timeout_returns_none(self) -> None:
+        """测试无局域网主机时应答超时返回 None。"""
+        from gomoku.gui.room_net import discover_room_host
+
+        assert discover_room_host(timeout=0.3, discovery_port=18090) is None
+
+    def test_resolve_room_host_local_fallback(self) -> None:
+        """测试无远端主机时本机自动担任房间服务器并生成缓存。"""
+        from gomoku.gui import room_net
+        from gomoku.gui.room_net import (
+            RoomClient,
+            invalidate_room_host_cache,
+            resolve_room_host,
+        )
+
+        try:
+            invalidate_room_host_cache()
+            host, port = resolve_room_host(port=18087, discovery_port=28091)
+            assert host == "127.0.0.1"
+            assert port == 18087
+
+            client = RoomClient(host=host, port=port)
+            assert client.connect() is True
+            client.close()
+        finally:
+            # 清理全局单例与缓存，避免影响其他用例
+            invalidate_room_host_cache()
+            if room_net.global_room_server is not None:
+                room_net.global_room_server.stop()
+                room_net.global_room_server = None
+            if room_net.global_lan_beacon is not None:
+                room_net.global_lan_beacon.stop()
+                room_net.global_lan_beacon = None
