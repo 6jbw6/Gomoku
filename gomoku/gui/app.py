@@ -6,6 +6,7 @@
 
 import os
 import sys
+import threading
 from typing import Any, Optional
 import pygame
 from gomoku.core.enums import GameMode, PieceColor
@@ -27,9 +28,12 @@ class GomokuApp:
     def __init__(self) -> None:
         """初始化 Pygame 引擎、窗口、音效与档案管理器。"""
         pygame.init()
-        # 开启文本输入事件流，保证 KEYDOWN 事件可靠携带输入字符
-        # （部分系统与输入法环境下缺省不开启会导致 unicode 为空）
-        pygame.key.start_text_input()
+        # 关闭文本输入模式，解除窗口与输入法（IME）的关联：
+        # 否则中文输入法开启时，小写字母按键会被组字状态拦截，
+        # 导致 KEYDOWN 的键码与 unicode 均丢失而无法输入房间码
+        # （开启大写锁定才可输入的现象即源于此）。
+        # 按键由事件键码直接识别，游戏窗口无需输入法参与。
+        pygame.key.stop_text_input()
         pygame.display.set_caption(TITLE)
 
         self.screen = pygame.display.set_mode(
@@ -48,6 +52,12 @@ class GomokuApp:
 
         # 加载与缩放沉香茶室雅境背景图
         self.bg_surface: Optional[pygame.Surface] = self._load_and_prepare_background()
+        # 对局页提亮版背景：暖色加法提亮，缓解全局遮罩的暗沉
+        self.bg_surface_game: Optional[pygame.Surface] = None
+        if self.bg_surface is not None:
+            bright = self.bg_surface.copy()
+            bright.fill((34, 30, 24), special_flags=pygame.BLEND_RGB_ADD)
+            self.bg_surface_game = bright
 
         # 场景状态机
         self.current_scene: str = "lobby"
@@ -57,6 +67,13 @@ class GomokuApp:
             on_start_game=self.start_game,
         )
         self.game_scene: Optional[GameScene] = None
+
+        # 后台预热局域网主机发现：UDP 广播探测约需 1 秒，
+        # 若在主线程同步执行（点击匹配/建房时）将冻结界面导致
+        # 点击丢失；启动即后台解析并缓存，后续连接零阻塞
+        from gomoku.gui.room_net import resolve_room_host
+
+        threading.Thread(target=resolve_room_host, daemon=True).start()
 
     def _bring_to_foreground(self) -> None:
         """若在 Windows 系统下运行，强制将窗口前置并获取交互焦点。"""
@@ -134,44 +151,12 @@ class GomokuApp:
         self.current_scene = "lobby"
         self.game_scene = None
 
-    def _diag_log(self, path: str, event: pygame.event.Event) -> None:
-        """诊断日志：记录收到的输入事件与关键状态（GOMOKU_DIAG 环境变量触发）。"""
-        import time
-
-        if event.type not in (
-            pygame.KEYDOWN, pygame.TEXTINPUT, pygame.TEXTEDITING,
-            pygame.MOUSEBUTTONDOWN,
-        ):
-            return
-        lobby = getattr(self, "lobby_scene", None)
-        state = ""
-        if lobby is not None:
-            state = (
-                f" scene={self.current_scene}"
-                f" room_dialog={lobby.room_dialog.is_visible}"
-                f" input_active={lobby.room_input.is_active}"
-                f" input_text={lobby.room_input.text!r}"
-                f" sub_mode={lobby.room_sub_mode}"
-            )
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(
-                f"{time.time():.3f} type={event.type}"
-                f" key={getattr(event, 'key', '')}"
-                f" unicode={getattr(event, 'unicode', '')!r}"
-                f" text={getattr(event, 'text', '')!r}"
-                f" pos={getattr(event, 'pos', '')}"
-                f" mod={getattr(event, 'mod', '')}{state}\n"
-            )
-
     def run(self) -> None:
         """主游戏循环，驱动 60 帧刷新、事件处理与场景渲染。"""
-        diag_path = os.environ.get("GOMOKU_DIAG")
         first_frame: bool = True
         while self.is_running:
             # 1. 全局事件分发
             for event in pygame.event.get():
-                if diag_path:
-                    self._diag_log(diag_path, event)
                 if event.type == pygame.QUIT:
                     self.is_running = False
                     break
@@ -192,9 +177,13 @@ class GomokuApp:
             elif self.current_scene == "game" and self.game_scene:
                 self.game_scene.update()
 
-            # 3. 画面渲染
-            if self.bg_surface:
-                self.screen.blit(self.bg_surface, (0, 0))
+            # 3. 画面渲染（对局页使用提亮版背景）
+            game_bg = (
+                self.current_scene == "game" and self.game_scene
+            )
+            bg = self.bg_surface_game if game_bg else self.bg_surface
+            if bg is not None:
+                self.screen.blit(bg, (0, 0))
             else:
                 self.screen.fill(COLOR_BG_DARK)
 
