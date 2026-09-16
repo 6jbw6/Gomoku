@@ -302,27 +302,83 @@ class TestRoomNet:
         server.stop()
 
     def test_lan_beacon_discovery(self) -> None:
-        """测试 UDP 信标应答与局域网主机自动发现。"""
+        """测试 UDP 信标应答、局域网主机发现与本机自答过滤。"""
         import socket as sk
 
+        from gomoku.gui import room_net
         from gomoku.gui.room_net import LanBeacon, RoomHostServer, discover_room_host
 
-        # 本机场景下应答源地址由内核路由决定（可能为回环或虚拟网卡地址）
         server = RoomHostServer(port=18088)
         assert server.start() is True
         beacon = LanBeacon(port=18089, room_port=18088)
         assert beacon.start() is True
 
-        found = discover_room_host(timeout=0.8, discovery_port=18089)
-        assert found is not None
-        assert found[1] == 18088
+        # 保留真实本机 IP 集合，用于测试后还原
+        real_ips = list(room_net._local_ips())
+        try:
+            # 伪造本机 IP 为无关地址：本机信标应答源不在集合内，可被发现
+            room_net._local_ip_cache = ["10.99.99.99"]
+            found = discover_room_host(timeout=0.8, discovery_port=18089)
+            assert found is not None
+            assert found[1] == 18088
 
-        # 验证发现的地址可真实接入本机房间服务器
-        with sk.create_connection(found, timeout=1.0):
-            pass
+            # 验证发现的地址可真实接入本机房间服务器
+            with sk.create_connection(found, timeout=1.0):
+                pass
 
-        beacon.stop()
-        server.stop()
+            # 把回环与真实网卡均计入本机：信标全部自答应被过滤，
+            # 修复机房全员自任主机时本机应答掩盖真实远端主机的问题
+            room_net._local_ip_cache = ["127.0.0.1"] + real_ips
+            assert discover_room_host(timeout=0.8, discovery_port=18089) is None
+        finally:
+            room_net._local_ip_cache = real_ips
+            beacon.stop()
+            server.stop()
+
+    def test_pick_converge_host_rules(self) -> None:
+        """测试撮合收敛目标选择：全网向 IP 数值最小的存活主机收敛。"""
+        from gomoku.gui import room_net
+
+        fake_hosts: list = []
+        orig_disc = room_net.discover_room_hosts
+        orig_alive = room_net._tcp_alive
+        room_net.discover_room_hosts = lambda **kw: list(fake_hosts)
+        room_net._tcp_alive = lambda h, p, timeout=0.6: True
+        try:
+            # 本机 .20 自任主机：远端存在数值更小的 .9 → 迁移到 .9
+            room_net._local_ip_cache = ["192.168.10.20"]
+            fake_hosts[:] = [("192.168.10.9", 8088)]
+            assert room_net.pick_converge_host("127.0.0.1", 8088) == ("192.168.10.9", 8088)
+
+            # 本机 .9 自任主机（全网数值最小，即收敛汇点）→ 留守不迁移
+            room_net._local_ip_cache = ["192.168.10.9"]
+            fake_hosts[:] = [("192.168.10.20", 8088)]
+            assert room_net.pick_converge_host("127.0.0.1", 8088) is None
+
+            # 已在收敛目标主机上 → 无需迁移
+            room_net._local_ip_cache = ["192.168.10.30"]
+            fake_hosts[:] = [("192.168.10.9", 8088), ("192.168.10.20", 8088)]
+            assert room_net.pick_converge_host("192.168.10.9", 8088) is None
+
+            # 接入非收敛主机 → 向数值最小的存活主机迁移
+            assert room_net.pick_converge_host("192.168.10.20", 8088) == (
+                "192.168.10.9", 8088
+            )
+
+            # 数值最小的主机 TCP 失活 → 顺延次优存活主机
+            alive = {"192.168.10.9": False, "192.168.10.20": True}
+            room_net._tcp_alive = lambda h, p, timeout=0.6: alive.get(h, True)
+            assert room_net.pick_converge_host("192.168.10.30", 8088) == (
+                "192.168.10.20", 8088
+            )
+
+            # 局域网内无其他主机 → 不迁移
+            fake_hosts[:] = []
+            assert room_net.pick_converge_host("127.0.0.1", 8088) is None
+        finally:
+            room_net.discover_room_hosts = orig_disc
+            room_net._tcp_alive = orig_alive
+            room_net._local_ip_cache = None
 
     def test_discover_timeout_returns_none(self) -> None:
         """测试无局域网主机时应答超时返回 None。"""
@@ -358,6 +414,76 @@ class TestRoomNet:
             client.close()
         finally:
             # 清理全局单例与缓存，避免影响其他用例
+            invalidate_room_host_cache()
+            if room_net.global_room_server is not None:
+                room_net.global_room_server.stop()
+                room_net.global_room_server = None
+            if room_net.global_lan_beacon is not None:
+                room_net.global_lan_beacon.stop()
+                room_net.global_lan_beacon = None
+
+    def test_match_heal_migration_and_match(self, tmp_path) -> None:
+        """撮合空等自愈全链路：体检到收敛主机后迁移重排并成功撮合。"""
+        import time as tm
+
+        from gomoku.core.enums import GameMode
+        from gomoku.gui import room_net
+        from gomoku.gui.audio import SoundManager
+        from gomoku.gui.profile import UserProfileManager
+        from gomoku.gui.room_net import (
+            RoomClient,
+            RoomHostServer,
+            invalidate_room_host_cache,
+        )
+        from gomoku.gui.scenes import LobbyScene
+
+        server_self = RoomHostServer(port=18095)  # 模拟本机自任主机
+        assert server_self.start() is True
+        server_conv = RoomHostServer(port=18096)  # 模拟远端收敛主机
+        assert server_conv.start() is True
+
+        started: list = []
+        lobby = LobbyScene(
+            UserProfileManager(filename=str(tmp_path / "heal_profile.json")),
+            SoundManager(),
+            on_start_game=lambda **kw: started.append(kw),
+        )
+        opponent = RoomClient(port=18096)
+
+        try:
+            # 本机自任主机上排队（模拟机房全员自任主机时的分裂态）
+            room_net.set_resolved_room_host("127.0.0.1", 18095)
+            lobby._start_matchmaking(GameMode.RANKED, "测试匹配")
+            assert lobby.match_client is not None
+            assert lobby.match_client.port == 18095
+
+            # 收敛体检产出目标：应迁移重排到远端收敛主机
+            lobby.match_heal_done = True
+            lobby.match_heal_target = ("127.0.0.1", 18096)
+            lobby.update()
+            assert lobby.match_client is not None
+            assert lobby.match_client.port == 18096
+
+            # 收敛主机上另一棋手入队 → 双方立即撮合开局
+            assert opponent.connect() is True
+            opponent.send({
+                "action": "match", "mode": "ranked", "username": "对手", "rank": "青铜"
+            })
+            tm.sleep(0.2)
+            lobby.update()
+
+            assert len(started) == 1
+            assert started[0].get("mode") == GameMode.RANKED
+            game_client = started[0].get("room_client")
+            assert game_client is not None
+            assert game_client.port == 18096
+            assert lobby.is_matching is False
+        finally:
+            if lobby.match_client is not None:
+                lobby.match_client.close()
+            opponent.close()
+            server_self.stop()
+            server_conv.stop()
             invalidate_room_host_cache()
             if room_net.global_room_server is not None:
                 room_net.global_room_server.stop()

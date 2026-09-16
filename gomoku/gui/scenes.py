@@ -4,6 +4,7 @@
 """
 
 import random
+import threading
 import time
 from typing import Any, Callable, List, Optional, Tuple
 import pygame
@@ -36,9 +37,15 @@ from gomoku.gui.profile import UserProfileManager
 from gomoku.gui.room_net import (
     RoomClient,
     invalidate_room_host_cache,
+    pick_converge_host,
     resolve_room_host,
+    set_resolved_room_host,
 )
 from gomoku.services.rank_service import RankSettlementResult
+
+# 撮合队列收敛体检参数：空等多久后开始探测与探测周期（秒）
+MATCH_HEAL_FIRST_DELAY = 4.0
+MATCH_HEAL_INTERVAL = 5.0
 
 
 class LobbyScene:
@@ -112,6 +119,11 @@ class LobbyScene:
         self.match_start_time: float = 0.0
         self.match_retry_count: int = 0
         self.join_retry_done: bool = False
+        # 撮合队列收敛体检状态（机房全员自任主机时自动向同一台主机收敛）
+        self.match_heal_check_time: float = 0.0
+        self.match_heal_pending: bool = False
+        self.match_heal_done: bool = False
+        self.match_heal_target: Optional[Tuple[str, int]] = None
         self.matching_dialog = ModalDialog(width=460, height=280)
         self.btn_cancel_match = Button(
             (0, 0, 140, 42), "取消匹配", style="secondary", on_click=self._cancel_matchmaking
@@ -181,6 +193,50 @@ class LobbyScene:
             invalidate_room_host_cache()
         return None
 
+    def _probe_match_heal(self, cur_host: str, cur_port: int) -> None:
+        """后台探测局域网内是否存在应收敛接入的更优撮合主机。"""
+        target = pick_converge_host(cur_host, cur_port)
+        self.match_heal_target = target
+        self.match_heal_pending = False
+        self.match_heal_done = True
+
+    def _migrate_match_client(self, target: Tuple[str, int]) -> None:
+        """撮合队列迁移：退出当前主机排队，接入收敛主机重新排队。
+
+        机房整机同时启动时全员自任主机，各自本机队列互相隔离
+        永远撮合不到对手；迁移使全网队列合并到同一台收敛主机。
+        """
+        old = self.match_client
+        if old is not None:
+            pending = old.poll_messages()
+            if any(m.get("event") == "start" for m in pending):
+                # 迁移前夕恰被撮合：消息回填队列交由主循环正常开局
+                for m in pending:
+                    old.msg_queue.put(m)
+                return
+            old.close()  # 服务端将自动把本连接移出匹配队列
+
+        set_resolved_room_host(target[0], target[1])
+        client = RoomClient(host=target[0], port=target[1])
+        if not client.connect():
+            # 收敛主机瞬断：清缓存走通用重连（重新发现并回退自任主机）
+            client.close()
+            invalidate_room_host_cache()
+            client = self._connect_room_client()
+        if client is not None:
+            self.match_client = client
+            client.send({
+                "action": "match",
+                "mode": self.match_mode.value,
+                "username": self.profile.username,
+                "rank": self.profile.display_rank,
+            })
+        else:
+            # 连收敛主机与回退自任均失败：终止本次匹配
+            self.match_client = None
+            self.is_matching = False
+            self.matching_dialog.hide()
+
     def _start_matchmaking(self, mode: GameMode, title: str) -> None:
         """启动排位或休闲快速匹配（不限时检索，直到取消或撮合成功）。"""
         self.sound.play_click()
@@ -189,6 +245,11 @@ class LobbyScene:
         self.match_title = title
         self.match_start_time = time.time()
         self.match_retry_count = 0
+        # 重置收敛体检状态：空等 MATCH_HEAL_FIRST_DELAY 秒后开始第一轮探测
+        self.match_heal_check_time = time.time() + MATCH_HEAL_FIRST_DELAY
+        self.match_heal_pending = False
+        self.match_heal_done = False
+        self.match_heal_target = None
 
         if self.match_client:
             self.match_client.close()
@@ -209,6 +270,9 @@ class LobbyScene:
             self.match_client.send({"action": "cancel_match"})
             self.match_client.close()
             self.match_client = None
+        self.match_heal_pending = False
+        self.match_heal_done = False
+        self.match_heal_target = None
         self.is_matching = False
         self.matching_dialog.hide()
 
@@ -367,6 +431,35 @@ class LobbyScene:
                             room_client=client,
                         )
                         return
+
+                # 撮合空等自愈：机房整机同时启动时全员自任主机，各自排队
+                # 永远等不到对手；定期后台体检收敛目标主机，需要时迁移
+                # 重排，使全网撮合队列合并到同一台主机（IP 数值最小者）
+                now = time.time()
+                if not self.match_heal_pending:
+                    if self.match_heal_done:
+                        # 消费上轮体检结果：目标存在且不同时执行迁移
+                        self.match_heal_done = False
+                        self.match_heal_check_time = now + MATCH_HEAL_INTERVAL
+                        target = self.match_heal_target
+                        self.match_heal_target = None
+                        if (
+                            target is not None
+                            and self.match_client is not None
+                            and (target[0], target[1])
+                            != (self.match_client.host, self.match_client.port)
+                        ):
+                            self._migrate_match_client(target)
+                    elif now >= self.match_heal_check_time:
+                        # 到期启动新一轮后台体检（探测耗时段在后台线程完成）
+                        self.match_heal_pending = True
+                        cur_host = self.match_client.host
+                        cur_port = self.match_client.port
+                        threading.Thread(
+                            target=self._probe_match_heal,
+                            args=(cur_host, cur_port),
+                            daemon=True,
+                        ).start()
 
         # 2. 好友房间流程驱动
         if self.room_dialog.is_visible and self.room_client:
