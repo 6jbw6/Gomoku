@@ -27,6 +27,9 @@ class GomokuApp:
     def __init__(self) -> None:
         """初始化 Pygame 引擎、窗口、音效与档案管理器。"""
         pygame.init()
+        # 开启文本输入事件流，保证 KEYDOWN 事件可靠携带输入字符
+        # （部分系统与输入法环境下缺省不开启会导致 unicode 为空）
+        pygame.key.start_text_input()
         pygame.display.set_caption(TITLE)
 
         self.screen = pygame.display.set_mode(
