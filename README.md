@@ -9,15 +9,19 @@
 ### 1. 三大核心竞技对弈模式
 
 - 天梯排位赛 (Ranked Competitive)：
-  - 智能匹配相近段位棋友对手（玩家执黑或执白，对手由启发式算法拟真推演决策）；
-  - 严格回合锁定：仅在轮到玩家执子时响应落子，对手思考时展示拟真思考动效；
+  - 优先撮合同机房/校园网（局域网）内真实棋友对战，8 秒内无对手将自动停止检索；
+  - 严格回合锁定：仅在轮到玩家执子时响应落子，双方落子实时帧同步；
   - 采用经典天梯星级段位与勇者积分抵扣机制，胜场晋级升星，战败扣星与保星保护。
 - 单人休闲匹配 (Casual Match)：
-  - 快速匹配棋道对手切磋，不计天梯星数，纯粹技艺切磋。
+  - 自动检索同局域网在线棋友快速切磋，不计天梯星数，纯粹技艺切磋。
 - 好友房间对战 (Friend Room Code Battle)：
-  - 恢复并升级经典的 6 位房间码对弈体系；
+  - 经典 6 位房间码对弈体系，同机房或校园网好友远程联机对战；
   - 支持“创建房间”一键生成专属 6 位数字字母房间码，启动后台套接字会话；
-  - 好友输入 6 位房间码即可一键加入房间，实现局域网/本机帧同步对战。
+  - 好友输入 6 位房间码即可一键加入房间，跨机器帧同步对战。
+- 局域网联机机制 (LAN Auto-Discovery)：
+  - 基于 UDP 广播信标（端口 8089）自动发现同网段内已运行的房间服务器（TCP 8088）；
+  - 局域网内最先进入匹配/房间的机器自动担任主机，其余机器自动接入；
+  - 主机退出后客户端自动重新发现并重试，链路自愈，无需手动配置 IP。
 
 ### 2. 全屏与窗口自由切换
 
@@ -90,8 +94,7 @@ gomoku/
     ├── board_view.py # 15x15 棋盘渲染视口、光影渐变棋子与坐标吸附
     ├── components.py # 国风金石按钮、沉香卡片、进度条与居中弹窗
     ├── audio.py      # 纯数学声波物理拟真合成落子音效与按键音
-    ├── ai.py         # 启发式多格局评估引擎 (单机与人机切磋)
-    ├── room_net.py   # 原生 Socket 局域网/本机房间码网络对战服务
+    ├── room_net.py   # 原生 Socket 局域网联机服务（UDP 信标发现 + 房间码/撮合对战）
     ├── profile.py    # 本地棋客档案持久化与天梯榜单管理
     ├── constants.py  # 东方金石配色体系与视口规格常量
     └── assets/       # 桌面端原生资源目录
@@ -101,7 +104,7 @@ gomoku/
 - S (单一职责原则)：`Board` 只管棋盘网格；`StandardRuleEngine` 只管胜负判定；`RankService` 只管排位计算；`BoardView` 只管像素映射与绘制。
 - O (开闭原则)：规则引擎抽象为 `IRuleEngine`，支持未来扩展国际连珠禁手规则。
 - L (里氏替换原则)：场景基类与接口多态规范，无缝切换场景流转。
-- I (接口隔离原则)：细粒度分离音效合成、档案存储与 AI 运算。
+- I (接口隔离原则)：细粒度分离音效合成、档案存储与网络联机通信。
 - D (依赖倒置原则)：业务服务依赖抽象接口，不硬编码外部具体设施。
 - 全中文规范：项目全部源码、注释与文档字符串均采用中文。
 
@@ -145,7 +148,7 @@ pip install -r requirements.txt
 ### 2. 执行自动化测试与规范检测
 
 ```bash
-# 执行全部单元测试（桌面客户端组件、核心规则、AI判定、段位系统）
+# 执行全部单元测试（桌面客户端组件、核心规则、局域网联机通信、段位系统）
 python -m pytest tests -v
 
 # 执行 PEP 8 语法规范静态检测（零告警通过，单行长度 ≤ 100）
@@ -163,8 +166,23 @@ python run.py
 # 或直接执行：python desktop_app.py
 ```
 
+方式 C（免安装 exe 发布版）：
+- 运行 PyInstaller 打包（需先 `pip install pyinstaller`），产物为单文件 `dist/五子棋天梯竞技平台.exe`：
+```bash
+pyinstaller --noconfirm --onefile --windowed --name "五子棋天梯竞技平台" ^
+  --icon gomoku/gui/assets/app.ico ^
+  --add-data "gomoku/gui/assets/theme_bg.jpg;gomoku/gui/assets" ^
+  --add-binary "<conda>/Library/bin/ffi.dll;." ^
+  --add-binary "<conda>/Library/bin/libexpat.dll;." ^
+  --add-binary "<conda>/Library/bin/liblzma.dll;." ^
+  --add-binary "<conda>/Library/bin/libmpdec-4.dll;." ^
+  --exclude-module numpy --exclude-module psutil --exclude-module yaml ^
+  --exclude-module PIL --exclude-module requests --exclude-module tkinter run.py
+```
+- exe 双击即玩，档案 `gomoku_profile.json` 保存在 exe 同目录，便于拷贝到机房/校园网机器分发对战。
+
 终端将毫秒级启动 1200×800 高清分辨率的东方雅韵五子棋桌面应用：
-- **四大对弈模式**：天梯排位赛、休闲匹配赛、本地双人同屏对弈、人机智能切磋；
+- **三大对弈模式**：天梯排位赛、休闲匹配赛、好友房间码联机对战；
 - **极速响应启动**：DirectSound 毫秒级探测与 dummy 优雅回退，杜绝无声卡冷启动冻结；
 - **智能落子音效**：数学正弦波物理拟真合成落子“嗒”与按键清脆声，无外部音频资源依赖；
 - **纯正棋客榜**：大厅右侧常驻棋客天梯榜，实时展示段位、胜率与天梯星星；

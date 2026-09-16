@@ -31,3 +31,8 @@ Thumbs.db
 
 # 日志文件
 *.log
+
+# PyInstaller 打包产物
+build/
+dist/
+*.spec
