@@ -49,6 +49,76 @@ class TestUserProfileManager:
         assert mgr.state.total_matches == 1
 
 
+class TestTextInput:
+    """测试房间码文本输入框的字符解析与焦点交互。"""
+
+    @staticmethod
+    def _press(inp, key: int, unicode: str = "") -> None:
+        """向输入框投递一次按键事件。"""
+        event = pygame.event.Event(pygame.KEYDOWN, key=key, unicode=unicode)
+        inp.handle_event(event)
+
+    def test_ime_blocked_input_fallback(self) -> None:
+        """测试中文输入法拦截文本通道（unicode 为空）时按键兜底输入。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        # 模拟中文输入法组字状态：KEYDOWN 携带键码但 unicode 为空
+        for key in (pygame.K_a, pygame.K_b, pygame.K_3, pygame.K_KP5, pygame.K_z):
+            self._press(inp, key, unicode="")
+        assert inp.text == "AB35Z"
+
+    def test_normal_unicode_input(self) -> None:
+        """测试常规文本输入通道下字符转大写录入。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        self._press(inp, pygame.K_c, unicode="c")
+        self._press(inp, pygame.K_d, unicode="d")
+        self._press(inp, pygame.K_7, unicode="7")
+        assert inp.text == "CD7"
+
+    def test_fullwidth_and_cjk_rejected(self) -> None:
+        """测试汉字与全角字符不得混入房间码。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        self._press(inp, pygame.K_SPACE, unicode="棋")
+        self._press(inp, pygame.K_a, unicode="Ａ")
+        assert inp.text == ""
+
+    def test_max_length_and_backspace(self) -> None:
+        """测试六位上限截断与退格删除。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = True
+        for key in (pygame.K_1, pygame.K_2, pygame.K_3,
+                    pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7):
+            self._press(inp, key, unicode="")
+        assert inp.text == "123456"
+        self._press(inp, pygame.K_BACKSPACE)
+        assert inp.text == "12345"
+
+    def test_inactive_ignores_keys(self) -> None:
+        """测试未获得焦点时键盘事件不录入。"""
+        from gomoku.gui.components import TextInput
+
+        inp = TextInput((0, 0, 260, 46))
+        inp.is_active = False
+        self._press(inp, pygame.K_a, unicode="a")
+        assert inp.text == ""
+        # 点击输入框区域后激活焦点
+        click = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=(130, 23)
+        )
+        assert inp.handle_event(click) is True
+        assert inp.is_active is True
+
+
 class TestGomokuAppFlow:
     """测试 Pygame 桌面端应用生命周期与场景状态流转。"""
 

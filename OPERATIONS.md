@@ -520,6 +520,30 @@
 
 ---
 
+### [v1.3.4] - 房间码输入框中文输入法兼容修复与设计文档交付
+- **操作日期**：2026-09-16
+- **需求背景**：用户反馈“测试输入房间码框不能输入”，并在机房（YI Client 管控、还原卡环境）与其他人实测联机失败。
+- **根因剖析**：
+  1. 输入框无法输入（`gomoku/gui/components.py`）：`TextInput` 仅依赖 KEYDOWN 事件的 `event.unicode` 取字符；Windows 开启中文输入法时按键被输入法拦截进入组字状态，`unicode` 为空字符串，按字母毫无反应——机房电脑默认中文输入法必现，客方根本输不进房间码，联机测试无法走完流程。
+  2. 顺带发现隐患：原字符校验 `ch.isalnum()` 对汉字同样返回 True，若输入法上屏汉字会混入房间码。
+- **具体操作**：
+  1. 键码兜底修复 (`gomoku/gui/components.py`)：新增 `_resolve_input_char()`，`unicode` 为空时依据虚拟键码兜底识别 A–Z / 0–9（含小键盘 `_KP_DIGITS` 映射），并收紧为仅接受半角字母数字，杜绝汉字与全角字符混入房间码。
+  2. 文本输入事件流开启 (`gomoku/gui/app.py`)：`pygame.init()` 后显式调用 `pygame.key.start_text_input()`，保证部分系统与输入法环境下 KEYDOWN 可靠携带输入字符。
+  3. 新增 `TestTextInput` 5 项单元测试 (`tests/test_gui.py`)：覆盖 IME 拦截兜底、常规 unicode 路径、汉字/全角拒绝、六位截断与退格、未聚焦忽略按键。
+  4. 交付设计文档（`设计文档.md` + `设计文档.docx`）：产品功能阐述、功能模块图、分层架构图、联机运行时线程图、落子帧同步时序图；四张图按官方图规范（层次分解结构、标准三层架构、部署图风格、UML 2.x 时序）重绘，纯中文标注、纯黑白配色，经像素级质检（零彩色像素、文字无重叠出界）。
+  5. 重新打包发布：PyInstaller 单文件 17.3MB，启动实测通过。
+- **机房环境排查指引**（联机仍失败时按序检查）：
+  1. 两机互 `ping`：不通为机房交换机端口隔离（防作弊），需管理员关闭，任何联机软件均无解；
+  2. 首次运行 Windows 防火墙弹窗须点“允许访问”，或管理员执行 `netsh advfirewall firewall add rule name="五子棋联机TCP" dir=in action=allow protocol=TCP localport=8088` 与 `... name="五子棋联机UDP" ... protocol=UDP localport=8089`；还原卡机器每次还原后需重新放行；
+  3. 确认 YI Client 教师端是否有网络/程序管控。
+- **验证结果**：
+  - `pytest tests -q` 25 项单元测试（新增 5 项 TextInput 用例）**100% 全部通过**。
+  - `flake8 gomoku tests --max-line-length=100` **0 警告 0 报错**。
+  - 模拟中文输入法组字状态（KEYDOWN 携带键码、`unicode` 为空）实测：`AB35Z` 正确录入，汉字与全角字符被拒。
+  - exe 发布产物 `dist/五子棋天梯竞技平台.exe`（17.3MB，含修复）双击启动实测正常。
+
+---
+
 ## 🚀 持续操作标准作业程序 (SOP - main + dev 双分支模型)
 
 本项目全流程严格遵循下图所示的 **`main`（主干）与 `dev`（开发）双分支协同模型**：
